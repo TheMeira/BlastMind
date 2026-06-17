@@ -3,6 +3,12 @@ class MenuScene extends Phaser.Scene {
         super({ key: 'MenuScene' });
     }
 
+    preload() {
+        if (!this.cache.audio.exists('click')) {
+            this.load.audio('click', '/static/audio/click.mp3');
+        }
+    }
+
     create() {
         this.cameras.main.setBackgroundColor('#070714');
 
@@ -19,6 +25,14 @@ class MenuScene extends Phaser.Scene {
             fontSize: '16px',
             color: '#1a2a40',
         }).setOrigin(0.5, 1);
+
+        this.scale.on('resize', this._onResize, this);
+        this.events.once('shutdown', () => this.scale.off('resize', this._onResize, this));
+    }
+
+    _onResize() {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this.scene.restart(), 200);
     }
 
     spawnBackground(W, H) {
@@ -120,6 +134,7 @@ class MenuScene extends Phaser.Scene {
             txt.setStyle({ color: '#c8e8ff' });
         });
         zone.on('pointerdown', () => {
+            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
             this.time.delayedCall(140, callback);
         });
     }

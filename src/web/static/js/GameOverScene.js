@@ -7,6 +7,12 @@ class GameOverScene extends Phaser.Scene {
         this.finalScore = (data && data.score) || 0;
     }
 
+    preload() {
+        if (!this.cache.audio.exists('click')) {
+            this.load.audio('click', '/static/audio/click.mp3');
+        }
+    }
+
     create() {
         this.cameras.main.setBackgroundColor('#070714');
 
@@ -43,6 +49,14 @@ class GameOverScene extends Phaser.Scene {
         this.makeButton(cx, H * 0.80, 'Main Menu', H, () => {
             this.scene.start('MenuScene');
         });
+
+        this.scale.on('resize', this._onResize, this);
+        this.events.once('shutdown', () => this.scale.off('resize', this._onResize, this));
+    }
+
+    _onResize() {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this.scene.restart(), 200);
     }
 
     makeButton(x, y, label, H, callback) {
@@ -74,6 +88,7 @@ class GameOverScene extends Phaser.Scene {
             txt.setStyle({ color: '#c8e8ff' });
         });
         zone.on('pointerdown', () => {
+            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
             this.time.delayedCall(140, callback);
         });
     }

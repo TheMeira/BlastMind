@@ -24,12 +24,19 @@ class GameScene extends Phaser.Scene {
         this.mode = (data && data.mode) || 'human';
         this.aiSpeed = (data && data.speed) || 1.0;
         this.aiAgent = (data && data.agent) || 'random';
+        this.resume = (data && data.resume) || false;
         this.gameState = null;
         this.selectedIdx = null;
         this.ws = null;
         this.pieceZones = [];
         this.bgBlocks = [];
         this.colorGrid = Array.from({ length: BOARD_N }, () => Array(BOARD_N).fill(null));
+    }
+
+    preload() {
+        if (!this.cache.audio.exists('click')) {
+            this.load.audio('click', '/static/audio/click.mp3');
+        }
     }
 
     create() {
@@ -53,30 +60,35 @@ class GameScene extends Phaser.Scene {
         this.H = H;
 
         this.spawnBackground(W, H);
+        this.drawCenterPanel(W, H);
 
         this.boardGfx = this.add.graphics();
         this.ghostGfx = this.add.graphics();
         this.panelGfx = this.add.graphics();
 
+        const vpad = Math.floor(H * 0.02);
         const scoreFS = Math.floor(Math.min(H * 0.040, 42));
-        this.scoreLbl = this.add.text(W / 2, Math.floor(H * 0.022), 'Score: 0', {
+        const scoreCY = Math.floor((vpad + this.BY) / 2);
+        this.scoreLbl = this.add.text(W / 2, scoreCY, 'Score: 0', {
             fontFamily: 'Orbitron, Arial',
             fontSize: scoreFS + 'px',
             color: '#ffffff',
             fontStyle: 'bold',
-        }).setOrigin(0.5, 0);
+        }).setOrigin(0.5, 0.5);
 
-        this.comboLbl = this.add.text(W / 2, Math.floor(H * 0.022) + scoreFS + 6, '', {
+        this.comboLbl = this.add.text(W / 2, scoreCY + Math.floor(scoreFS * 0.55) + 4, '', {
             fontFamily: 'Orbitron, Arial',
             fontSize: Math.floor(scoreFS * 0.6) + 'px',
             color: '#ffd740',
         }).setOrigin(0.5, 0);
 
-        this.hintLbl = this.add.text(W / 2, H - 20, '', {
+        const panelBottom = this.PANEL_Y + this.SLOT;
+        const hintCY = Math.floor((panelBottom + (H - vpad)) / 2);
+        this.hintLbl = this.add.text(W / 2, hintCY, '', {
             fontFamily: 'Orbitron, Arial',
             fontSize: Math.floor(H * 0.018) + 'px',
             color: '#2a4a6a',
-        }).setOrigin(0.5, 1);
+        }).setOrigin(0.5, 0.5);
 
         const menuBtn = this.add.text(16, 16, '← Menu', {
             fontFamily: 'Orbitron, Arial',
@@ -86,6 +98,7 @@ class GameScene extends Phaser.Scene {
         menuBtn.on('pointerover', () => menuBtn.setStyle({ color: '#00d4ff' }));
         menuBtn.on('pointerout', () => menuBtn.setStyle({ color: '#1a3a5a' }));
         menuBtn.on('pointerdown', () => {
+            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
             if (this.ws) this.ws.close();
             this.scene.start('MenuScene');
         });
@@ -95,13 +108,27 @@ class GameScene extends Phaser.Scene {
         if (this.mode === 'human') {
             this.setupInput();
             this.hintLbl.setText('Click a piece below, then click the board to place it');
-            this.startHumanGame();
+            if (this.resume) {
+                this.resumeHumanGame();
+            } else {
+                this.startHumanGame();
+            }
         } else {
             this.hintLbl.setText('AI Watch Mode · ' + this.aiAgent + ' · ' + this.aiSpeed + 'x speed');
             this.startAIWatch();
         }
 
+        this.scale.on('resize', this._onResize, this);
+        this.events.once('shutdown', () => this.scale.off('resize', this._onResize, this));
         this.events.on('shutdown', this.shutdown, this);
+    }
+
+    _onResize() {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => {
+            if (this.ws) { this.ws.close(); this.ws = null; }
+            this.scene.restart({ mode: this.mode, speed: this.aiSpeed, agent: this.aiAgent, resume: this.mode === 'human' });
+        }, 200);
     }
 
     spawnBackground(W, H) {
@@ -148,6 +175,21 @@ class GameScene extends Phaser.Scene {
                 b.rect.x = b.zoneX + b.half + Phaser.Math.Between(0, b.spawnW);
             }
         });
+    }
+
+    drawCenterPanel(W, H) {
+        const hpad = Math.floor(this.CS * 0.6);
+        const vpad = Math.floor(H * 0.02);
+        const x = this.BX - hpad;
+        const y = vpad;
+        const w = this.BP + hpad * 2;
+        const h = H - vpad * 2;
+        const g = this.add.graphics();
+        const r = Math.floor(this.CS * 0.4);
+        g.fillStyle(0x070714, 1);
+        g.fillRoundedRect(x, y, w, h, r);
+        g.lineStyle(2, 0x0d2244, 1);
+        g.strokeRoundedRect(x, y, w, h, r);
     }
 
     drawEmptyBoard() {
@@ -376,19 +418,37 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    showScorePop(gain) {
+    showScorePop(gain, comboCount) {
         if (gain <= 0) return;
-        const { BX, BY, BP, CS, H } = this;
+        const { BX, BY, BP, H } = this;
         const fs = Math.floor(Math.min(H * 0.055, 56));
-        const txt = this.add.text(BX + BP / 2, BY + BP / 2, '+' + gain, {
+        const cx = BX + BP / 2;
+        const cy = BY + BP / 2;
+        const targetY = BY + BP * 0.25;
+
+        const gainTxt = this.add.text(cx, cy, '+' + gain, {
             fontFamily: 'Orbitron, Arial', fontSize: fs + 'px', fontStyle: 'bold',
             color: '#ffd740',
             shadow: { offsetX: 0, offsetY: 0, color: '#ff8800', blur: 20, fill: true },
         }).setOrigin(0.5).setAlpha(0.95);
         this.tweens.add({
-            targets: txt, y: BY + BP * 0.25, alpha: 0, duration: 900, ease: 'Power2',
-            onComplete: () => txt.destroy(),
+            targets: gainTxt, y: targetY, alpha: 0, duration: 900, ease: 'Power2',
+            onComplete: () => gainTxt.destroy(),
         });
+
+        if (comboCount > 1) {
+            const comboFS = Math.floor(Math.min(fs * (1 + comboCount * 0.12), fs * 1.9));
+            const comboX = cx + gainTxt.width * 0.5 + 10;
+            const comboTxt = this.add.text(comboX, cy, '×' + comboCount, {
+                fontFamily: 'Orbitron, Arial', fontSize: comboFS + 'px', fontStyle: 'bold',
+                color: '#00e5ff',
+                shadow: { offsetX: 0, offsetY: 0, color: '#0088ff', blur: 24, fill: true },
+            }).setOrigin(0, 0.5).setAlpha(0.95);
+            this.tweens.add({
+                targets: comboTxt, y: targetY, alpha: 0, duration: 900, ease: 'Power2',
+                onComplete: () => comboTxt.destroy(),
+            });
+        }
     }
 
     updateState(newState, lastPieceId) {
@@ -408,14 +468,14 @@ class GameScene extends Phaser.Scene {
         this.renderBoard();
         this.renderPanel();
         this.scoreLbl.setText('Score: ' + newState.score);
-        this.comboLbl.setText(newState.combo_count > 0 ? 'Combo ×' + newState.combo_count : '');
+        this.comboLbl.setText('');
 
         if (prevBoard && lastPieceId) {
             this.animatePlacement(prevBoard, newState.board);
             const cleared = this.findClearedCells(prevBoard, newState.board);
             if (cleared.length > 0) {
                 this.time.delayedCall(80, () => this.animateClear(cleared));
-                this.time.delayedCall(120, () => this.showScorePop(newState.score - prevScore));
+                this.time.delayedCall(120, () => this.showScorePop(newState.score - prevScore, newState.combo_count));
             }
         }
 
@@ -449,6 +509,16 @@ class GameScene extends Phaser.Scene {
         const res = await fetch('/api/new-game', { method: 'POST' });
         const state = await res.json();
         this.updateState(state, null);
+    }
+
+    async resumeHumanGame() {
+        const res = await fetch('/api/state');
+        const state = await res.json();
+        if (!state || state.error) {
+            this.startHumanGame();
+        } else {
+            this.updateState(state, null);
+        }
     }
 
     startAIWatch() {
