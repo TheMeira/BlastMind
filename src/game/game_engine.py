@@ -27,8 +27,8 @@ class GameState:
 
 
 class GameEngine:
-    def __init__(self):
-        self._generator = PieceGenerator()
+    def __init__(self, seed=None):
+        self._generator = PieceGenerator(seed=seed)
 
     def new_game(self) -> GameState:
         return GameState(
