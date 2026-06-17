@@ -88,7 +88,7 @@ class GameOverScene extends Phaser.Scene {
             txt.setStyle({ color: '#c8e8ff' });
         });
         zone.on('pointerdown', () => {
-            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
+            try { this.sound.play('click', { volume: getSFXVolume() }); } catch (e) {}
             this.time.delayedCall(140, callback);
         });
     }

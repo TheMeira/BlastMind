@@ -37,6 +37,9 @@ class GameScene extends Phaser.Scene {
         if (!this.cache.audio.exists('click')) {
             this.load.audio('click', '/static/audio/click.mp3');
         }
+        if (!this.cache.audio.exists('line-clear')) {
+            this.load.audio('line-clear', '/static/audio/line-clear.mp3');
+        }
     }
 
     create() {
@@ -98,7 +101,7 @@ class GameScene extends Phaser.Scene {
         menuBtn.on('pointerover', () => menuBtn.setStyle({ color: '#00d4ff' }));
         menuBtn.on('pointerout', () => menuBtn.setStyle({ color: '#1a3a5a' }));
         menuBtn.on('pointerdown', () => {
-            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
+            try { this.sound.play('click', { volume: getSFXVolume() }); } catch (e) {}
             if (this.ws) this.ws.close();
             this.scene.start('MenuScene');
         });
@@ -474,6 +477,7 @@ class GameScene extends Phaser.Scene {
             this.animatePlacement(prevBoard, newState.board);
             const cleared = this.findClearedCells(prevBoard, newState.board);
             if (cleared.length > 0) {
+                try { this.sound.play('line-clear', { volume: getSFXVolume() }); } catch (e) {}
                 this.time.delayedCall(80, () => this.animateClear(cleared));
                 this.time.delayedCall(120, () => this.showScorePop(newState.score - prevScore, newState.combo_count));
             }

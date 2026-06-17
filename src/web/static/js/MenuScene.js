@@ -96,12 +96,20 @@ class MenuScene extends Phaser.Scene {
     }
 
     buildButtons(cx, H) {
-        this.makeButton(cx, H * 0.50, 'Play Game', H, () => {
+        this.makeButton(cx, H * 0.47, 'Play Game', H, () => {
             this.scene.start('GameScene', { mode: 'human' });
         });
 
-        this.makeButton(cx, H * 0.64, 'Watch AI (Random)', H, () => {
+        this.makeButton(cx, H * 0.60, 'Watch AI (Random)', H, () => {
             this.scene.start('GameScene', { mode: 'ai', speed: 3.0, agent: 'random' });
+        });
+
+        this.makeButton(cx, H * 0.73, 'Settings', H, () => {
+            this.scene.start('SettingsScene', { from: 'MenuScene' });
+        });
+
+        this.makeButton(cx, H * 0.86, 'How to Play', H, () => {
+            this.scene.start('HelpScene', { from: 'MenuScene' });
         });
     }
 
@@ -134,7 +142,7 @@ class MenuScene extends Phaser.Scene {
             txt.setStyle({ color: '#c8e8ff' });
         });
         zone.on('pointerdown', () => {
-            try { this.sound.play('click', { volume: 0.6 }); } catch (e) {}
+            try { this.sound.play('click', { volume: getSFXVolume() }); } catch (e) {}
             this.time.delayedCall(140, callback);
         });
     }
