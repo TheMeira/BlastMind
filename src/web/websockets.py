@@ -35,7 +35,7 @@ async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str 
     state = engine.new_game()
     await websocket.send_json(serialise_state(state))
 
-    delay = max(0.05, 1.0 / max(speed, 0.1))
+    delay = max(0.02, 1.0 / max(speed, 0.1))
 
     while not state.game_over:
         pieces_snapshot = list(state.pieces)
@@ -52,7 +52,15 @@ async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str 
             row, col = move
             state = engine.apply_placement(state, piece_id, row, col)
             await websocket.send_json(serialise_state(state, piece_id))
-            await asyncio.sleep(delay)
+
+            try:
+                msg = await asyncio.wait_for(websocket.receive_json(), timeout=delay)
+                if isinstance(msg, dict) and msg.get("type") == "set_speed":
+                    new_speed = float(msg.get("speed", speed))
+                    delay = max(0.02, 1.0 / max(new_speed, 0.1))
+            except asyncio.TimeoutError:
+                pass
+
             placed_any = True
 
         if not placed_any:

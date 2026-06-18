@@ -117,13 +117,70 @@ class GameScene extends Phaser.Scene {
                 this.startHumanGame();
             }
         } else {
-            this.hintLbl.setText('AI Watch Mode · ' + this.aiAgent + ' · ' + this.aiSpeed + 'x speed');
+            this.hintLbl.setText('AI Watch Mode  ·  ' + this.aiAgent);
+            this.buildSpeedControls(W, H);
             this.startAIWatch();
         }
 
         this.scale.on('resize', this._onResize, this);
         this.events.once('shutdown', () => this.scale.off('resize', this._onResize, this));
         this.events.on('shutdown', this.shutdown, this);
+    }
+
+    buildSpeedControls(W, H) {
+        const presets = [0.5, 1, 2, 5, 10];
+        const btnH = Math.floor(H * 0.042);
+        const btnW = Math.floor(H * 0.068);
+        const gap  = Math.floor(H * 0.010);
+        const fs   = Math.floor(H * 0.020);
+        const R    = Math.floor(btnH * 0.22);
+        const totalW = presets.length * btnW + (presets.length - 1) * gap;
+        const startX = W - Math.floor(W * 0.03) - totalW;
+        const y = Math.floor(H * 0.048);
+
+        this._speedGfx = [];
+        this._speedTxts = [];
+
+        presets.forEach((spd, i) => {
+            const bx = startX + i * (btnW + gap) + btnW / 2;
+            const gfx = this.add.graphics();
+            const txt = this.add.text(bx, y, spd + '×', {
+                fontFamily: 'Orbitron, Arial',
+                fontSize: fs + 'px',
+                fontStyle: 'bold',
+            }).setOrigin(0.5);
+            this._speedGfx.push({ gfx, bx, y, btnW, btnH, R, spd });
+            this._speedTxts.push(txt);
+
+            const zone = this.add.zone(bx - btnW / 2, y - btnH / 2, btnW, btnH)
+                .setOrigin(0, 0)
+                .setInteractive({ useHandCursor: true });
+
+            zone.on('pointerdown', () => this.setAISpeed(spd));
+        });
+
+        this.refreshSpeedControls();
+    }
+
+    refreshSpeedControls() {
+        if (!this._speedGfx) return;
+        this._speedGfx.forEach(({ gfx, bx, y, btnW, btnH, R, spd }, i) => {
+            const active = spd === this.aiSpeed;
+            gfx.clear();
+            gfx.fillStyle(active ? 0x0a2060 : 0x06091a);
+            gfx.fillRoundedRect(bx - btnW / 2, y - btnH / 2, btnW, btnH, R);
+            gfx.lineStyle(1, active ? 0x00d4ff : 0x0d2244);
+            gfx.strokeRoundedRect(bx - btnW / 2, y - btnH / 2, btnW, btnH, R);
+            this._speedTxts[i].setStyle({ color: active ? '#00d4ff' : '#2a4a6a' });
+        });
+    }
+
+    setAISpeed(spd) {
+        this.aiSpeed = spd;
+        this.refreshSpeedControls();
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'set_speed', speed: spd }));
+        }
     }
 
     _onResize() {

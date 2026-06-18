@@ -30,7 +30,7 @@ function startGame() {
     const config = {
         type: Phaser.AUTO,
         backgroundColor: '#070714',
-        scene: [MenuScene, GameScene, GameOverScene, SettingsScene, HelpScene],
+        scene: [MenuScene, GameScene, GameOverScene, SettingsScene, HelpScene, AgentSelectScene, MultiAgentScene, ComparisonScene],
         parent: 'game-container',
         scale: {
             mode: Phaser.Scale.RESIZE,

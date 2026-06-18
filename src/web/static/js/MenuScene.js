@@ -101,8 +101,8 @@ class MenuScene extends Phaser.Scene {
             this.scene.start('GameScene', { mode: 'human' });
         });
 
-        this.makeButton(cx, H * 0.60, 'Watch AI (Random)', H, () => {
-            this.scene.start('GameScene', { mode: 'ai', speed: 3.0, agent: 'random' });
+        this.makeButton(cx, H * 0.60, 'Watch AI', H, () => {
+            this.scene.start('AgentSelectScene', { from: 'MenuScene' });
         });
 
         this.makeButton(cx, H * 0.73, 'Settings', H, () => {
