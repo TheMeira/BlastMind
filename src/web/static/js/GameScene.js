@@ -253,10 +253,11 @@ class GameScene extends Phaser.Scene {
             const cx = sx + SLOT / 2;
             const cy = PANEL_Y + SLOT / 2;
             const selected = this.selectedIdx === idx;
+            const placeable = this.hasAnyPlacement(piece.grid);
 
             g.fillStyle(selected ? 0x0d1e50 : 0x0a0a20);
             g.fillRoundedRect(sx, PANEL_Y, SLOT, SLOT, R);
-            if (selected) {
+            if (selected && placeable) {
                 g.lineStyle(2, 0x00d4ff);
                 g.strokeRoundedRect(sx, PANEL_Y, SLOT, SLOT, R);
             }
@@ -268,9 +269,10 @@ class GameScene extends Phaser.Scene {
             const pCell = Math.min(Math.floor(CS * 0.54), Math.floor(drawArea / Math.max(ph, pw)));
             const drawX = cx - (pw * pCell) / 2;
             const drawY = cy - (ph * pCell) / 2;
-            const color = PIECE_COLORS[piece.id] || 0x448aff;
+            const color = placeable ? (PIECE_COLORS[piece.id] || 0x448aff) : 0x2a2a3a;
+            const alpha = placeable ? 1 : 0.4;
 
-            g.fillStyle(color);
+            g.fillStyle(color, alpha);
             for (let r = 0; r < ph; r++) {
                 for (let c = 0; c < pw; c++) {
                     if (grid[r][c] === 1) {
@@ -282,12 +284,23 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            if (this.mode === 'human') {
+            if (this.mode === 'human' && placeable) {
                 const zone = this.add.zone(sx, PANEL_Y, SLOT, SLOT).setOrigin(0, 0).setInteractive({ useHandCursor: true });
                 zone.on('pointerdown', () => this.selectPiece(idx));
                 this.pieceZones.push(zone);
             }
         });
+    }
+
+    hasAnyPlacement(grid) {
+        const ph = grid.length;
+        const pw = grid[0].length;
+        for (let r = 0; r <= BOARD_N - ph; r++) {
+            for (let c = 0; c <= BOARD_N - pw; c++) {
+                if (this.canPlace(grid, r, c)) return true;
+            }
+        }
+        return false;
     }
 
     selectPiece(idx) {
