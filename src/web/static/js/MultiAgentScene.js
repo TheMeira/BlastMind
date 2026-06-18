@@ -21,6 +21,9 @@ class MultiAgentScene extends Phaser.Scene {
         if (!this.cache.audio.exists('game-over')) {
             this.load.audio('game-over', '/static/audio/game-over.mp3');
         }
+        if (!this.cache.audio.exists('place')) {
+            this.load.audio('place', '/static/audio/place.mp3');
+        }
     }
 
     create() {
@@ -180,6 +183,7 @@ class MultiAgentScene extends Phaser.Scene {
             const lastPieceId = newState.last_piece_id || null;
 
             if (lastPieceId && agent.prevBoard) {
+                try { this.sound.play('place', { volume: getSFXVolume() }); } catch (e) {}
                 this.updateColorGrid(agent, agent.prevBoard, newState.board, lastPieceId);
                 this.updateStats(agent, agent.prevBoard, newState);
             }
