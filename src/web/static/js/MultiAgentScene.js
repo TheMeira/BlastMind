@@ -18,6 +18,9 @@ class MultiAgentScene extends Phaser.Scene {
         if (!this.cache.audio.exists('line-clear')) {
             this.load.audio('line-clear', '/static/audio/line-clear.mp3');
         }
+        if (!this.cache.audio.exists('game-over')) {
+            this.load.audio('game-over', '/static/audio/game-over.mp3');
+        }
     }
 
     create() {
@@ -192,8 +195,9 @@ class MultiAgentScene extends Phaser.Scene {
             }
 
             if (newState.game_over) {
-                agent.finished  = true;
+                agent.finished   = true;
                 agent.finalScore = newState.score;
+                try { this.sound.play('game-over', { volume: getSFXVolume() }); } catch (e) {}
                 this.renderAgentBoard(agent);
                 this.checkAllDone();
             }

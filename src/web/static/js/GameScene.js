@@ -40,6 +40,9 @@ class GameScene extends Phaser.Scene {
         if (!this.cache.audio.exists('line-clear')) {
             this.load.audio('line-clear', '/static/audio/line-clear.mp3');
         }
+        if (!this.cache.audio.exists('game-over')) {
+            this.load.audio('game-over', '/static/audio/game-over.mp3');
+        }
     }
 
     create() {
@@ -554,6 +557,7 @@ class GameScene extends Phaser.Scene {
         }
 
         if (newState.game_over) {
+            try { this.sound.play('game-over', { volume: getSFXVolume() }); } catch (e) {}
             this.time.delayedCall(600, () => {
                 if (this.ws) this.ws.close();
                 const isNewRecord = saveHighScore(this.mode, this.aiAgent, newState.score);
