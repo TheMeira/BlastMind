@@ -19,6 +19,7 @@ class MenuScene extends Phaser.Scene {
         this.spawnBackground(W, H);
         this.buildTitle(cx, H);
         this.buildButtons(cx, H);
+        this.buildScoreBoard(W, H);
 
         this.add.text(cx, H - 30, 'University of Nottingham  ·  COMP4026', {
             fontFamily: 'Orbitron, Arial',
@@ -110,6 +111,66 @@ class MenuScene extends Phaser.Scene {
 
         this.makeButton(cx, H * 0.86, 'How to Play', H, () => {
             this.scene.start('HelpScene', { from: 'MenuScene' });
+        });
+    }
+
+    buildScoreBoard(W, H) {
+        const entries = [
+            { label: 'Player',      key: 'human' },
+            { label: 'Random',      key: 'random' },
+            { label: 'Greedy',      key: 'greedy' },
+            { label: 'Beam Search', key: 'beam' },
+            { label: 'DQN',         key: 'dqn' },
+            { label: 'MCTS',        key: 'mcts' },
+        ];
+
+        const rowH   = Math.floor(H * 0.036);
+        const fs     = Math.floor(H * 0.019);
+        const titleFS = Math.floor(H * 0.022);
+        const padX   = Math.floor(W * 0.022);
+        const padY   = Math.floor(H * 0.018);
+        const innerW = Math.floor(Math.min(W * 0.19, 210));
+        const innerH = titleFS + Math.floor(H * 0.02) + entries.length * rowH + padY;
+        const panelW = innerW + padX * 2;
+        const panelH = innerH + padY * 2;
+        const panelX = W - Math.floor(W * 0.03) - panelW;
+        const panelY = Math.floor(H * 0.08);
+
+        const gfx = this.add.graphics();
+        gfx.fillStyle(0x06091a, 0.82);
+        gfx.fillRoundedRect(panelX, panelY, panelW, panelH, 10);
+        gfx.lineStyle(1, 0x0d2244, 1);
+        gfx.strokeRoundedRect(panelX, panelY, panelW, panelH, 10);
+
+        const cx = panelX + panelW / 2;
+        let y = panelY + padY;
+
+        this.add.text(cx, y, 'Best Scores', {
+            fontFamily: 'Orbitron, Arial',
+            fontSize: titleFS + 'px',
+            fontStyle: 'bold',
+            color: '#00d4ff',
+        }).setOrigin(0.5, 0);
+        y += titleFS + Math.floor(H * 0.02);
+
+        entries.forEach(({ label, key }) => {
+            const score    = parseInt(localStorage.getItem('highScore_' + key) || '0', 10);
+            const hasScore = score > 0;
+
+            this.add.text(panelX + padX, y + rowH / 2, label, {
+                fontFamily: 'Orbitron, Arial',
+                fontSize: fs + 'px',
+                color: hasScore ? '#c8e8ff' : '#2a4a6a',
+            }).setOrigin(0, 0.5);
+
+            this.add.text(panelX + panelW - padX, y + rowH / 2, hasScore ? String(score) : '—', {
+                fontFamily: 'Orbitron, Arial',
+                fontSize: fs + 'px',
+                fontStyle: 'bold',
+                color: hasScore ? '#ffd740' : '#1a3050',
+            }).setOrigin(1, 0.5);
+
+            y += rowH;
         });
     }
 

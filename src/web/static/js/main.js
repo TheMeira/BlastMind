@@ -1,3 +1,21 @@
+function highScoreKey(mode, agent) {
+    return 'highScore_' + (mode === 'human' ? 'human' : agent);
+}
+
+function getHighScore(mode, agent) {
+    return parseInt(localStorage.getItem(highScoreKey(mode, agent)) || '0', 10);
+}
+
+function saveHighScore(mode, agent, score) {
+    const key = highScoreKey(mode, agent);
+    const current = getHighScore(mode, agent);
+    if (score > current) {
+        localStorage.setItem(key, String(score));
+        return true;
+    }
+    return false;
+}
+
 function getSFXVolume() {
     const v = parseFloat(localStorage.getItem('sfxVolume'));
     return isNaN(v) ? 0.6 : v;

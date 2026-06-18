@@ -486,7 +486,15 @@ class GameScene extends Phaser.Scene {
         if (newState.game_over) {
             this.time.delayedCall(600, () => {
                 if (this.ws) this.ws.close();
-                this.scene.start('GameOverScene', { score: newState.score });
+                const isNewRecord = saveHighScore(this.mode, this.aiAgent, newState.score);
+                const bestScore = getHighScore(this.mode, this.aiAgent);
+                this.scene.start('GameOverScene', {
+                    score: newState.score,
+                    bestScore,
+                    isNewRecord,
+                    mode: this.mode,
+                    agent: this.aiAgent,
+                });
             });
         }
     }
