@@ -11,3 +11,8 @@ env/
 Thumbs.db
 notebooks/.ipynb_checkpoints/
 models/*.pt
+
+# Remotion
+remotion/node_modules/
+out/
+replays/

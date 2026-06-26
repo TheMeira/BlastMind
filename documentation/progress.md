@@ -79,11 +79,27 @@
 
 ---
 
+## Phase 4 — Greedy Heuristic Agent ✅
+**Completed:** 26 June 2026
+
+**Built:**
+- `src/ai/greedy.py` — `GreedyAgent` class: exhaustive search over all valid placement combinations for all 3 pieces per turn using a weighted heuristic (score gained, holes, bumpiness, column heights)
+- `src/web/websockets.py` — refactored game loop: agents now return a full move list per turn; `_AGENTS` dict makes adding future agents a one-liner
+- `src/web/static/js/AgentSelectScene.js` — Greedy button unlocked (`available: true`)
+
+**Key decisions:**
+- Agent searches all P₁×P₂×P₃ placement combinations (exhaustive, fixed piece order); no permutations for speed
+- Direct NumPy board simulation inside the search (avoids `GameState` object creation overhead)
+- Heuristic weights: score ×1.0, holes ×-3.0, bumpiness ×-1.0, height ×-0.5 (to be tuned in WP8)
+- Mean score across 5 seeded games: ~2,188 (vs Random baseline ~500–1,000)
+- Computation time: ~300–600ms per turn (invisible at 1×–2× watch speed; caps effective speed at ~5× at 10× setting)
+
+---
+
 ## Up Next
 
-### Phase 4 — Greedy Heuristic Agent
-**Planned:** 15–21 June 2026
+### Phase 5 — Beam Search Agent
+**Planned:** 22 July – 5 August 2026
 
-- `src/ai/greedy.py` — heuristic evaluation (holes, bumpiness, heights, line clears)
-- Wire into WebSocket endpoint as `agent=greedy`, unlock in `AGENT_ROSTER` in `AgentSelectScene.js`
-- Benchmark: games played, avg score, avg game length
+- `src/ai/beam.py` — extends Greedy heuristic by simulating multiple turns ahead with a configurable beam width, averaging results over randomly sampled future piece sequences
+- Wire into WebSocket endpoint as `agent=beam`, unlock in `AGENT_ROSTER`

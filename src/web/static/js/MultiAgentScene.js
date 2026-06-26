@@ -81,6 +81,9 @@ class MultiAgentScene extends Phaser.Scene {
             this.buildStatsPanel(W, H, this.agents[0]);
         }
 
+        this._lastPlaceSFX = 0;
+        this._lastClearSFX = 0;
+
         this.buildSpeedControls(W, H);
         this.buildMenuButton(H);
 
@@ -183,7 +186,11 @@ class MultiAgentScene extends Phaser.Scene {
             const lastPieceId = newState.last_piece_id || null;
 
             if (lastPieceId && agent.prevBoard) {
-                try { this.sound.play('place', { volume: getSFXVolume() }); } catch (e) {}
+                const now = Date.now();
+                if (now - this._lastPlaceSFX > 120) {
+                    try { this.sound.play('place', { volume: getSFXVolume() }); } catch (e) {}
+                    this._lastPlaceSFX = now;
+                }
                 this.updateColorGrid(agent, agent.prevBoard, newState.board, lastPieceId);
                 this.updateStats(agent, agent.prevBoard, newState);
             }
@@ -243,7 +250,11 @@ class MultiAgentScene extends Phaser.Scene {
         }
 
         if (lines > 0) {
-            try { this.sound.play('line-clear', { volume: getSFXVolume() }); } catch (e) {}
+            const now = Date.now();
+            if (now - this._lastClearSFX > 120) {
+                try { this.sound.play('line-clear', { volume: getSFXVolume() }); } catch (e) {}
+                this._lastClearSFX = now;
+            }
         }
     }
 

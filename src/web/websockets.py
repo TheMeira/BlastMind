@@ -3,8 +3,10 @@ import random
 from typing import Optional
 
 from fastapi import WebSocket
+
 from src.game.game_engine import GameEngine, GameState
 from src.game.pieces import PIECES
+from src.ai.greedy import GreedyAgent
 
 
 def serialise_state(state: GameState, last_piece_id: Optional[str] = None) -> dict:
@@ -23,11 +25,22 @@ def serialise_state(state: GameState, last_piece_id: Optional[str] = None) -> di
     return d
 
 
-def pick_random_move(state: GameState, piece_id: str, engine: GameEngine):
-    placements = engine.get_valid_placements(state, piece_id)
-    if not placements:
-        return None
-    return random.choice(placements)
+def _pick_random_moves(state: GameState, engine: GameEngine):
+    moves = []
+    sim = state
+    for pid in list(state.pieces):
+        placements = engine.get_valid_placements(sim, pid)
+        if not placements:
+            break
+        row, col = random.choice(placements)
+        moves.append((pid, row, col))
+        sim = engine.apply_placement(sim, pid, row, col)
+    return moves
+
+
+_AGENTS = {
+    'greedy': GreedyAgent(),
+}
 
 
 async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str = "random", seed: Optional[int] = None):
@@ -38,20 +51,18 @@ async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str 
     delay = max(0.02, 1.0 / max(speed, 0.1))
 
     while not state.game_over:
-        pieces_snapshot = list(state.pieces)
-        placed_any = False
+        if agent_type in _AGENTS:
+            moves = _AGENTS[agent_type].choose_moves(state, engine)
+        else:
+            moves = _pick_random_moves(state, engine)
 
-        for piece_id in pieces_snapshot:
-            if piece_id not in state.pieces:
-                continue
+        if not moves:
+            state.game_over = True
+            break
 
-            move = pick_random_move(state, piece_id, engine)
-            if move is None:
-                continue
-
-            row, col = move
-            state = engine.apply_placement(state, piece_id, row, col)
-            await websocket.send_json(serialise_state(state, piece_id))
+        for pid, row, col in moves:
+            state = engine.apply_placement(state, pid, row, col)
+            await websocket.send_json(serialise_state(state, pid))
 
             try:
                 msg = await asyncio.wait_for(websocket.receive_json(), timeout=delay)
@@ -60,12 +71,6 @@ async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str 
                     delay = max(0.02, 1.0 / max(new_speed, 0.1))
             except asyncio.TimeoutError:
                 pass
-
-            placed_any = True
-
-        if not placed_any:
-            state.game_over = True
-            break
 
         if len(state.pieces) == 0:
             state = engine.start_new_turn(state)

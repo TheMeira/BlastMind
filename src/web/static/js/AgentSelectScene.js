@@ -1,6 +1,6 @@
 const AGENT_ROSTER = [
     { id: 'random', label: 'Random',     available: true  },
-    { id: 'greedy', label: 'Greedy',     available: false },
+    { id: 'greedy', label: 'Greedy',     available: true  },
     { id: 'beam',   label: 'Beam Search',available: false },
     { id: 'dqn',    label: 'DQN',        available: false },
     { id: 'mcts',   label: 'MCTS',       available: false },

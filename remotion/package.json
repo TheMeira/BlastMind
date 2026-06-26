@@ -1,0 +1,14 @@
+{
+  "name": "blastmind-remotion",
+  "version": "1.0.0",
+  "scripts": {
+    "studio": "remotion studio src/index.jsx",
+    "render": "remotion render src/index.jsx GameReplay ../out/replay.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "remotion": "^4.0.0"
+  }
+}
