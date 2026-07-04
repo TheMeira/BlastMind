@@ -35,12 +35,18 @@ function startGame() {
         scale: {
             mode: Phaser.Scale.RESIZE,
         },
+        fps: {
+            limit: 60,
+        },
         render: {
             antialias: true,
             roundPixels: false,
+            powerPreference: 'low-power',
         },
     };
-    new Phaser.Game(config);
+    const game = new Phaser.Game(config);
+    game.events.on(Phaser.Core.Events.BLUR, () => game.loop.sleep());
+    game.events.on(Phaser.Core.Events.FOCUS, () => game.loop.wake());
 }
 
 WebFont.load({
