@@ -96,10 +96,29 @@
 
 ---
 
+## Phase 5 — Beam Search Agent ✅
+**Completed:** 27 June 2026
+
+**Built:**
+- `src/ai/beam.py` — `BeamAgent(beam_width=8, lookahead_depth=1, samples=4)`: exhaustive top-k search over the current turn's placement combinations, then re-ranks finalists by simulating future turns with randomly sampled piece sequences
+- `src/ai/greedy.py` — extracted `_place()` placement-simulation helper, shared by both agents (regression-verified identical greedy scores)
+- `src/web/websockets.py` — `beam` registered in `_AGENTS`
+- `src/web/static/js/AgentSelectScene.js` — Beam Search button unlocked
+
+**Key decisions:**
+- Per-piece beam pruning within the current turn performed poorly (prunes "build up now, clear next piece" combos); replaced with exhaustive within-turn search keeping the top-k finalists via a bounded heap
+- Lookahead uses common random numbers: the same sampled future piece sequences are evaluated for every finalist (paired comparison), which eliminated ranking noise that made per-finalist sampling worse than greedy
+- Future turns inside the lookahead use a narrow per-piece beam (width = beam_width // 2) as a fast approximation; dead-end futures score a -500 penalty
+- 20-game benchmark (seeds 0–19): mean 3,146 | median 1,932 | max 10,442 vs Greedy mean 1,952 | median 1,255 | max 6,255 — +61% mean, mean turns 20.1 vs 16.0
+- Computation time: ~700–1,200ms per turn
+- Attempted greedy tuning (row holes + W_HOLES -5.0) was benchmarked and reverted: mean dropped to 1,700 and variance rose; formal weight tuning deferred to WP8
+
+---
+
 ## Up Next
 
-### Phase 5 — Beam Search Agent
-**Planned:** 22 July – 5 August 2026
+### Phase 6 — DQN Agent
+**Planned:** 5 – 26 August 2026
 
-- `src/ai/beam.py` — extends Greedy heuristic by simulating multiple turns ahead with a configurable beam width, averaging results over randomly sampled future piece sequences
-- Wire into WebSocket endpoint as `agent=beam`, unlock in `AGENT_ROSTER`
+- `src/ai/dqn.py` — Deep Q-Network agent: state encoding (board bitmap + current pieces), action masking over valid placements, experience replay, target network
+- Training script + saved model checkpoint; wire into WebSocket endpoint as `agent=dqn`, unlock in `AGENT_ROSTER`

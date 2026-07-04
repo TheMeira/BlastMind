@@ -39,30 +39,8 @@ class GreedyAgent:
         best_moves = None
 
         for row, col in placements:
-            ng = grid.copy()
-            ng[row:row + ph, col:col + pw] |= piece
-            cells = int(np.sum(piece))
-
-            rows_done = np.where(np.all(ng == 1, axis=1))[0]
-            cols_done = np.where(np.all(ng == 1, axis=0))[0]
-            ng[rows_done, :] = 0
-            ng[:, cols_done] = 0
-            lines = len(rows_done) + len(cols_done)
-
-            if lines > 0:
-                bonus = lines * 10 * (combo + 1)
-                if lines > 2:
-                    bonus *= (lines - 1)
-                if not np.any(ng):
-                    bonus += 360
-                new_combo = combo + lines
-                new_pwc = 0
-            else:
-                bonus = 0
-                new_pwc = pwc + 1
-                new_combo = 0 if new_pwc >= 3 else combo
-
-            new_score = cur_score + cells + bonus
+            ng, gained, new_combo, new_pwc = self._place(grid, piece, ph, pw, row, col, combo, pwc)
+            new_score = cur_score + gained
 
             val, ms = self._search(ng, new_combo, new_pwc, remaining[1:],
                                    moves + [(pid, row, col)], initial_score, new_score)
@@ -71,6 +49,32 @@ class GreedyAgent:
                 best_moves = ms
 
         return best_val, best_moves
+
+    def _place(self, grid, piece, ph, pw, row, col, combo, pwc):
+        ng = grid.copy()
+        ng[row:row + ph, col:col + pw] |= piece
+        cells = int(np.sum(piece))
+
+        rows_done = np.where(np.all(ng == 1, axis=1))[0]
+        cols_done = np.where(np.all(ng == 1, axis=0))[0]
+        ng[rows_done, :] = 0
+        ng[:, cols_done] = 0
+        lines = len(rows_done) + len(cols_done)
+
+        if lines > 0:
+            bonus = lines * 10 * (combo + 1)
+            if lines > 2:
+                bonus *= (lines - 1)
+            if not np.any(ng):
+                bonus += 360
+            new_combo = combo + lines
+            new_pwc = 0
+        else:
+            bonus = 0
+            new_pwc = pwc + 1
+            new_combo = 0 if new_pwc >= 3 else combo
+
+        return ng, cells + bonus, new_combo, new_pwc
 
     def _valid(self, grid, piece, ph, pw):
         out = []

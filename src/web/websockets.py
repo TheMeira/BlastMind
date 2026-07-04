@@ -7,6 +7,7 @@ from fastapi import WebSocket
 from src.game.game_engine import GameEngine, GameState
 from src.game.pieces import PIECES
 from src.ai.greedy import GreedyAgent
+from src.ai.beam import BeamAgent
 
 
 def serialise_state(state: GameState, last_piece_id: Optional[str] = None) -> dict:
@@ -40,6 +41,7 @@ def _pick_random_moves(state: GameState, engine: GameEngine):
 
 _AGENTS = {
     'greedy': GreedyAgent(),
+    'beam': BeamAgent(),
 }
 
 
