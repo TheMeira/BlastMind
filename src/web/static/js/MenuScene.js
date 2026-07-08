@@ -129,7 +129,7 @@ class MenuScene extends Phaser.Scene {
         const titleFS = Math.floor(H * 0.022);
         const padX   = Math.floor(W * 0.022);
         const padY   = Math.floor(H * 0.018);
-        const innerW = Math.floor(Math.min(W * 0.19, 210));
+        const innerW = Math.floor(Math.min(W * 0.22, 250));
         const innerH = titleFS + Math.floor(H * 0.02) + entries.length * rowH + padY;
         const panelW = innerW + padX * 2;
         const panelH = innerH + padY * 2;
@@ -157,18 +157,23 @@ class MenuScene extends Phaser.Scene {
             const score    = parseInt(localStorage.getItem('highScore_' + key) || '0', 10);
             const hasScore = score > 0;
 
-            this.add.text(panelX + padX, y + rowH / 2, label, {
+            const labelTxt = this.add.text(panelX + padX, y + rowH / 2, label, {
                 fontFamily: 'Orbitron, Arial',
                 fontSize: fs + 'px',
                 color: hasScore ? '#c8e8ff' : '#2a4a6a',
             }).setOrigin(0, 0.5);
 
-            this.add.text(panelX + panelW - padX, y + rowH / 2, hasScore ? String(score) : '—', {
+            const scoreTxt = this.add.text(panelX + panelW - padX, y + rowH / 2, hasScore ? String(score) : '—', {
                 fontFamily: 'Orbitron, Arial',
                 fontSize: fs + 'px',
                 fontStyle: 'bold',
                 color: hasScore ? '#ffd740' : '#1a3050',
             }).setOrigin(1, 0.5);
+
+            const maxScoreW = innerW - labelTxt.width - Math.floor(fs * 0.7);
+            if (scoreTxt.width > maxScoreW) {
+                scoreTxt.setScale(maxScoreW / scoreTxt.width);
+            }
 
             y += rowH;
         });

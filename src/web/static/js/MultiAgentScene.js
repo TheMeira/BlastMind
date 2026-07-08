@@ -32,6 +32,8 @@ class MultiAgentScene extends Phaser.Scene {
         const H = this.scale.height;
         const N = this.agentIds.length;
 
+        this.spawnBackground(W, H);
+
         const positions = this.computeLayout(W, H);
 
         this.agents = this.agentIds.map((id, i) => {
@@ -53,6 +55,9 @@ class MultiAgentScene extends Phaser.Scene {
                 finalScore: 0,
                 stats: { piecesPlaced: 0, linesCleared: 0, bestCombo: 0 },
                 statTxts: null,
+                trayGfx: this.add.graphics(),
+                traySlots: null,
+                lastPieceCount: -1,
                 ...positions[i],
             };
         });
@@ -105,15 +110,17 @@ class MultiAgentScene extends Phaser.Scene {
         const availH = H - topPad - botPad;
 
         if (N === 1) {
-            const cellByH = Math.floor(availH / BOARD_N);
+            const trayH = Math.floor(availH * 0.12);
+            const boardAvailH = availH - trayH;
+            const cellByH = Math.floor(boardAvailH / BOARD_N);
             const cellByW = Math.floor(W * 0.50 / BOARD_N);
             const CS = Math.min(100, cellByH, cellByW);
             const BP = BOARD_N * CS;
             const BX = Math.floor((W - BP) / 2);
-            const BY = topPad + Math.floor((availH - BP) / 2);
+            const BY = topPad + Math.floor((boardAvailH - BP) / 2);
             const labelX = Math.floor(W / 2);
             const labelY = Math.floor((topPad + BY) / 2);
-            return [{ bx: BX, by: BY, cs: CS, bp: BP, labelX, labelY }];
+            return [{ bx: BX, by: BY, cs: CS, bp: BP, labelX, labelY, trayY: BY + BP + Math.floor(H * 0.012), trayH }];
         }
 
         let cols, rows;
@@ -126,8 +133,9 @@ class MultiAgentScene extends Phaser.Scene {
         const labelH  = Math.floor(H * 0.065);
         const cellW   = Math.floor((W - hPad * (cols + 1)) / cols);
         const cellH   = Math.floor((availH - vPad * (rows - 1)) / rows);
+        const trayH   = Math.floor(cellH * 0.15);
         const boardAreaW = Math.floor(cellW * 0.88);
-        const boardAreaH = cellH - labelH;
+        const boardAreaH = cellH - labelH - trayH;
 
         const CS = Math.min(56, Math.floor(boardAreaW / BOARD_N), Math.floor(boardAreaH / BOARD_N));
         const BP = BOARD_N * CS;
@@ -138,14 +146,14 @@ class MultiAgentScene extends Phaser.Scene {
             for (let i = 0; i < 3; i++) {
                 const cellX = hPad + i * (cellW + hPad);
                 const cellY = topPad;
-                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS));
+                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS, trayH));
             }
             const row2W      = 2 * cellW + hPad;
             const row2StartX = Math.floor((W - row2W) / 2);
             for (let i = 0; i < 2; i++) {
                 const cellX = row2StartX + i * (cellW + hPad);
                 const cellY = topPad + cellH + vPad;
-                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS));
+                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS, trayH));
             }
         } else {
             for (let i = 0; i < N; i++) {
@@ -153,21 +161,24 @@ class MultiAgentScene extends Phaser.Scene {
                 const col   = i % cols;
                 const cellX = hPad + col * (cellW + hPad);
                 const cellY = topPad + row * (cellH + vPad);
-                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS));
+                positions.push(this._cellPos(cellX, cellY, cellW, labelH, BP, CS, trayH));
             }
         }
 
         return positions;
     }
 
-    _cellPos(cellX, cellY, cellW, labelH, BP, CS) {
+    _cellPos(cellX, cellY, cellW, labelH, BP, CS, trayH) {
+        const by = Math.floor(cellY + labelH);
         return {
             bx:     Math.floor(cellX + (cellW - BP) / 2),
-            by:     Math.floor(cellY + labelH),
+            by,
             cs:     CS,
             bp:     BP,
             labelX: Math.floor(cellX + cellW / 2),
             labelY: Math.floor(cellY + labelH / 2),
+            trayY:  by + BP + 6,
+            trayH,
         };
     }
 
@@ -197,6 +208,8 @@ class MultiAgentScene extends Phaser.Scene {
 
             agent.state = newState;
             agent.prevBoard = newState.board.map(row => [...row]);
+
+            this.updateTray(agent, newState, lastPieceId);
 
             agent.scoreTxt.setText(String(newState.score));
             this.renderAgentBoard(agent);
@@ -256,6 +269,94 @@ class MultiAgentScene extends Phaser.Scene {
                 this._lastClearSFX = now;
             }
         }
+    }
+
+    updateTray(agent, newState, lastPieceId) {
+        const pieces = newState.pieces || [];
+
+        if (!agent.traySlots || pieces.length > agent.lastPieceCount) {
+            agent.traySlots = pieces.map(p => ({ id: p.id, grid: p.grid, used: false }));
+        } else if (pieces.length < agent.lastPieceCount && lastPieceId) {
+            const slot = agent.traySlots.find(s => !s.used && s.id === lastPieceId);
+            if (slot) slot.used = true;
+        }
+
+        agent.lastPieceCount = pieces.length;
+        this.renderTray(agent);
+    }
+
+    renderTray(agent) {
+        const gfx = agent.trayGfx;
+        gfx.clear();
+        if (!agent.traySlots) return;
+
+        const { bx, bp, trayY, trayH } = agent;
+        const slotW = Math.floor(bp / 3);
+        const mc = Math.max(3, Math.floor(Math.min(slotW, trayH) / 5.6));
+
+        gfx.fillStyle(0x0a0a1e, 0.85);
+        gfx.fillRoundedRect(bx - 4, trayY, bp + 8, trayH, 6);
+
+        agent.traySlots.forEach((slot, i) => {
+            const grid = slot.grid;
+            const ph = grid.length;
+            const pw = grid[0].length;
+            const cx = bx + i * slotW + slotW / 2;
+            const cy = trayY + trayH / 2;
+            const x0 = cx - (pw * mc) / 2;
+            const y0 = cy - (ph * mc) / 2;
+            const color = (typeof PIECE_COLORS !== 'undefined' && PIECE_COLORS[slot.id]) || 0x448aff;
+
+            gfx.fillStyle(color, slot.used ? 0.12 : 0.9);
+            for (let r = 0; r < ph; r++) {
+                for (let c = 0; c < pw; c++) {
+                    if (grid[r][c] === 1) {
+                        gfx.fillRoundedRect(x0 + c * mc + 1, y0 + r * mc + 1, mc - 2, mc - 2, 2);
+                    }
+                }
+            }
+        });
+    }
+
+    spawnBackground(W, H) {
+        const colors = [0x448aff, 0xff6d00, 0xffea00, 0xff1744, 0x00e676, 0xe040fb, 0x7c4dff, 0x00e5ff];
+        this.bgBlocks = [];
+
+        const count = Math.floor((W * H) / 30000);
+
+        for (let i = 0; i < count; i++) {
+            const size = Phaser.Math.Between(36, Math.floor(W * 0.08));
+            const x = Phaser.Math.Between(-80, W + 80);
+            const y = Phaser.Math.Between(-80, H + 80);
+            const color = colors[i % colors.length];
+            const alpha = Phaser.Math.FloatBetween(0.05, 0.14);
+
+            const rect = this.add.rectangle(x, y, size, size, color, alpha);
+            rect.rotation = Phaser.Math.FloatBetween(0, Math.PI * 2);
+
+            this.bgBlocks.push({
+                rect,
+                vx: Phaser.Math.FloatBetween(-0.5, 0.5),
+                vy: Phaser.Math.FloatBetween(-0.9, -0.2),
+                rs: Phaser.Math.FloatBetween(-0.004, 0.004),
+                W, H,
+            });
+        }
+    }
+
+    update() {
+        if (!this.bgBlocks) return;
+        this.bgBlocks.forEach(b => {
+            b.rect.x += b.vx;
+            b.rect.y += b.vy;
+            b.rect.rotation += b.rs;
+            if (b.rect.y < -200) {
+                b.rect.y = b.H + 100;
+                b.rect.x = Phaser.Math.Between(-80, b.W + 80);
+            }
+            if (b.rect.x < -200) b.rect.x = b.W + 100;
+            if (b.rect.x > b.W + 200) b.rect.x = -100;
+        });
     }
 
     drawEmptyBoard(agent) {

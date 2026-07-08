@@ -1,5 +1,7 @@
 import asyncio
+import multiprocessing
 import random
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
 from fastapi import WebSocket
@@ -8,6 +10,8 @@ from src.game.game_engine import GameEngine, GameState
 from src.game.pieces import PIECES
 from src.ai.greedy import GreedyAgent
 from src.ai.beam import BeamAgent
+
+_EXECUTOR = ProcessPoolExecutor(max_workers=5, mp_context=multiprocessing.get_context('spawn'))
 
 
 def serialise_state(state: GameState, last_piece_id: Optional[str] = None) -> dict:
@@ -54,7 +58,8 @@ async def run_ai_game(websocket: WebSocket, speed: float = 1.0, agent_type: str 
 
     while not state.game_over:
         if agent_type in _AGENTS:
-            moves = _AGENTS[agent_type].choose_moves(state, engine)
+            loop = asyncio.get_running_loop()
+            moves = await loop.run_in_executor(_EXECUTOR, _AGENTS[agent_type].choose_moves, state, engine)
         else:
             moves = _pick_random_moves(state, engine)
 

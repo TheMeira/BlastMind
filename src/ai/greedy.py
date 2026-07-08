@@ -77,39 +77,21 @@ class GreedyAgent:
         return ng, cells + bonus, new_combo, new_pwc
 
     def _valid(self, grid, piece, ph, pw):
-        out = []
-        for r in range(_BOARD - ph + 1):
-            for c in range(_BOARD - pw + 1):
-                if not np.any((piece == 1) & (grid[r:r + ph, c:c + pw] == 1)):
-                    out.append((r, c))
-        return out
+        windows = np.lib.stride_tricks.sliding_window_view(grid, (ph, pw))
+        free = (windows * piece).sum(axis=(2, 3)) == 0
+        return [(int(r), int(c)) for r, c in np.argwhere(free)]
 
     def _eval(self, grid, cur_score, initial_score):
         score_gained = cur_score - initial_score
-        heights = self._col_heights(grid)
-        holes = self._holes(grid, heights)
-        bumpy = sum(abs(heights[i] - heights[i + 1]) for i in range(len(heights) - 1))
-        total_h = sum(heights)
+        filled = grid == 1
+        occupied = filled.any(axis=0)
+        heights = np.where(occupied, _BOARD - np.argmax(filled, axis=0), 0)
+        covered = np.maximum.accumulate(filled, axis=0)
+        holes = int(np.sum(covered & ~filled))
+        bumpy = int(np.abs(np.diff(heights)).sum())
+        total_h = int(heights.sum())
 
         return (score_gained * self.W_SCORE +
                 holes       * self.W_HOLES +
                 bumpy       * self.W_BUMPY +
                 total_h     * self.W_HEIGHT)
-
-    def _col_heights(self, grid):
-        heights = []
-        for c in range(_BOARD):
-            filled = np.where(grid[:, c] == 1)[0]
-            heights.append(_BOARD - filled[0] if len(filled) else 0)
-        return heights
-
-    def _holes(self, grid, heights):
-        holes = 0
-        for c, h in enumerate(heights):
-            if h == 0:
-                continue
-            top = _BOARD - h
-            for r in range(top + 1, _BOARD):
-                if grid[r, c] == 0:
-                    holes += 1
-        return holes
