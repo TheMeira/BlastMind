@@ -50,8 +50,9 @@ class HelpScene extends Phaser.Scene {
             color: '#ffffff',
         }).setOrigin(0, 0);
 
-        this.buildColumn(pad, colBodyY, colW, maxContentH - Math.floor(H * 0.06), H, this.gameplayLines());
-        this.buildColumn(divX + pad * 0.8, colBodyY, colW, maxContentH - Math.floor(H * 0.06), H, this.aiLines());
+        const colMaxH = maxContentH - Math.floor(H * 0.06);
+        this.buildColumn(pad, colBodyY, colW, colMaxH, H, this.gameplayLines());
+        this.buildColumn(divX + pad * 0.8, colBodyY, colW, colMaxH, H, this.aiLines());
 
         this.buildBackButton(cx, H);
 
@@ -65,34 +66,41 @@ class HelpScene extends Phaser.Scene {
         const lineGap = Math.floor(H * 0.012);
         const headGap = Math.floor(H * 0.022);
 
-        let y = startY;
+        const container = this.add.container(x, startY);
+        let y = 0;
 
         lines.forEach(({ text, type }) => {
-            if (y - startY >= maxH) return;
-
             if (type === 'heading') {
-                const t = this.add.text(x, y, text, {
+                const t = this.add.text(0, y, text, {
                     fontFamily: 'Orbitron, Arial',
                     fontSize: headFS + 'px',
                     fontStyle: 'bold',
                     color: '#00d4ff',
                 }).setOrigin(0, 0);
+                container.add(t);
                 y += t.height + headGap * 0.5;
             } else if (type === 'rule') {
                 const g = this.add.graphics();
                 g.lineStyle(1, 0x0d2244, 1);
-                g.lineBetween(x, y + lineGap, x + colW, y + lineGap);
+                g.lineBetween(0, y + lineGap, colW, y + lineGap);
+                container.add(g);
                 y += lineGap * 2.2;
             } else {
-                const t = this.add.text(x, y, text, {
+                const t = this.add.text(0, y, text, {
                     fontFamily: 'Orbitron, Arial',
                     fontSize: bodyFS + 'px',
                     color: '#7a9cc0',
                     wordWrap: { width: colW },
                 }).setOrigin(0, 0);
+                container.add(t);
                 y += t.height + lineGap;
             }
         });
+
+        const contentH = y;
+        if (contentH > maxH) {
+            container.setScale(maxH / contentH);
+        }
     }
 
     gameplayLines() {
