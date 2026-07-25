@@ -51,10 +51,13 @@ class HelpScene extends Phaser.Scene {
         }).setOrigin(0, 0);
 
         const colMaxH = maxContentH - Math.floor(H * 0.06);
+        this._scrollAreas = [];
         this.buildColumn(pad, colBodyY, colW, colMaxH, H, this.gameplayLines());
         this.buildColumn(divX + pad * 0.8, colBodyY, colW, colMaxH, H, this.aiLines());
 
         this.buildBackButton(cx, H);
+
+        this.input.on('wheel', this._onWheel, this);
 
         this.scale.on('resize', this._onResize, this);
         this.events.once('shutdown', () => this.scale.off('resize', this._onResize, this));
@@ -98,9 +101,64 @@ class HelpScene extends Phaser.Scene {
         });
 
         const contentH = y;
+
+        const maskGfx = this.make.graphics({}, false);
+        maskGfx.fillStyle(0xffffff);
+        maskGfx.fillRect(x, startY, colW, maxH);
+        container.setMask(maskGfx.createGeometryMask());
+
         if (contentH > maxH) {
-            container.setScale(maxH / contentH);
+            this.setupScrollbar(container, x, startY, colW, maxH, contentH);
         }
+    }
+
+    setupScrollbar(container, x, startY, colW, maxH, contentH) {
+        const maxScroll = contentH - maxH;
+        const trackX = x + colW + 10;
+        const thumbH = Math.max(24, maxH * (maxH / contentH));
+
+        const track = this.add.graphics();
+        track.fillStyle(0x0d2244, 0.6);
+        track.fillRoundedRect(trackX, startY, 4, maxH, 2);
+
+        const thumb = this.add.graphics();
+        const drawThumb = (scrollY) => {
+            thumb.clear();
+            const t = maxScroll > 0 ? scrollY / maxScroll : 0;
+            const thumbY = startY + t * (maxH - thumbH);
+            thumb.fillStyle(0x2a6ab0, 0.9);
+            thumb.fillRoundedRect(trackX, thumbY, 4, thumbH, 2);
+        };
+        drawThumb(0);
+
+        const area = {
+            container, x, y: startY, w: colW + 20, h: maxH,
+            scrollY: 0, maxScroll,
+            apply: (scrollY) => {
+                area.scrollY = Phaser.Math.Clamp(scrollY, 0, maxScroll);
+                container.y = startY - area.scrollY;
+                drawThumb(area.scrollY);
+            },
+        };
+        this._scrollAreas.push(area);
+
+        const dragZone = this.add.zone(x, startY, colW, maxH).setOrigin(0, 0).setInteractive();
+        dragZone.on('pointerdown', (pointer) => {
+            area._dragStartY = pointer.y;
+            area._dragStartScroll = area.scrollY;
+        });
+        this.input.on('pointermove', (pointer) => {
+            if (!pointer.isDown || area._dragStartY === undefined) return;
+            area.apply(area._dragStartScroll - (pointer.y - area._dragStartY));
+        });
+        this.input.on('pointerup', () => { area._dragStartY = undefined; });
+    }
+
+    _onWheel(pointer, over, dx, dy) {
+        const area = (this._scrollAreas || []).find(a =>
+            pointer.x >= a.x && pointer.x <= a.x + a.w &&
+            pointer.y >= a.y && pointer.y <= a.y + a.h);
+        if (area) area.apply(area.scrollY + dy);
     }
 
     gameplayLines() {
