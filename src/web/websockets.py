@@ -10,6 +10,8 @@ from src.game.game_engine import GameEngine, GameState
 from src.game.pieces import PIECES
 from src.ai.greedy import GreedyAgent
 from src.ai.beam import BeamAgent
+from src.ai.mcts import MCTSAgent
+from src.ai.dqn import DQNAgent
 
 _EXECUTOR = ProcessPoolExecutor(max_workers=5, mp_context=multiprocessing.get_context('spawn'))
 
@@ -46,6 +48,8 @@ def _pick_random_moves(state: GameState, engine: GameEngine):
 _AGENTS = {
     'greedy': GreedyAgent(),
     'beam': BeamAgent(),
+    'mcts': MCTSAgent(n_simulations=1000, time_limit=3.0),
+    'dqn': DQNAgent(checkpoint_path='models/dqn_v22prod_ep200000.pt', device='cpu', search_orderings=True),
 }
 
 

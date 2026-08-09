@@ -183,17 +183,17 @@ class HelpScene extends Phaser.Scene {
             { type: 'heading', text: 'Random Agent' },
             { type: 'body',    text: 'Selects both the piece and placement uniformly at random from all valid moves each turn. Makes no attempt to evaluate board state or future consequences. Used as the lower-bound baseline — any agent that cannot outperform random is considered ineffective.' },
             { type: 'rule' },
-            { type: 'heading', text: 'Greedy Agent  —  coming soon' },
+            { type: 'heading', text: 'Greedy Agent' },
             { type: 'body',    text: 'Scores every valid (piece, position) combination using a heuristic function and immediately picks the highest-scoring move. The heuristic weighs factors such as cells placed, lines cleared, and board compactness. Efficient and consistent, but vulnerable to local optima — it cannot sacrifice short-term score for a better long-term board state.' },
             { type: 'rule' },
-            { type: 'heading', text: 'Beam Search  —  coming soon' },
+            { type: 'heading', text: 'Beam Search' },
             { type: 'body',    text: 'Performs a forward tree search, expanding the K most promising board states at each depth level (the beam width). By exploring multiple hypothetical futures simultaneously, it can identify move sequences that sacrifice immediate score for a higher-value position several turns ahead. Stronger than Greedy at the cost of greater computation.' },
             { type: 'rule' },
-            { type: 'heading', text: 'DQN Agent  —  coming soon' },
-            { type: 'body',    text: 'A Deep Q-Network agent trained via reinforcement learning. A neural network learns to map board states directly to action values (Q-values), guided by rewards accumulated over millions of self-play episodes. Unlike rule-based agents, DQN discovers its own board evaluation strategy through experience rather than hand-crafted heuristics.' },
+            { type: 'heading', text: 'DQN Agent' },
+            { type: 'body',    text: 'A Deep Q-Network agent trained via reinforcement learning. A neural network learns to evaluate board states directly, guided by rewards accumulated over hundreds of thousands of self-play episodes. Unlike rule-based agents, DQN discovers its own board evaluation strategy through experience rather than hand-crafted heuristics. At decision time, the trained network evaluates every valid ordering of the current three-piece hand and plays whichever sequence it predicts will score highest.' },
             { type: 'rule' },
-            { type: 'heading', text: 'MCTS Agent  —  coming soon' },
-            { type: 'body',    text: 'Monte Carlo Tree Search builds a search tree by repeatedly simulating random games (rollouts) from the current state. Each iteration selects nodes using the UCB1 formula to balance exploration and exploitation. The move with the highest average simulated outcome is chosen. Requires no training and no domain heuristic, relying purely on statistical evidence from simulations.' },
+            { type: 'heading', text: 'MCTS Agent' },
+            { type: 'body',    text: 'Monte Carlo Tree Search builds a search tree by repeatedly simulating games from the current state, using chance nodes to model the random draw of each new hand. Each iteration selects nodes via the UCB1 formula to balance exploration and exploitation, then simulates forward with a heuristic-guided rollout policy to estimate the outcome. The move with the highest visit count is chosen. Combines statistical search with the same board-evaluation heuristic used by the Greedy agent, rather than hand-coded rules alone.' },
         ];
     }
 
