@@ -42,6 +42,9 @@ def build_agent(args):
             rollout_policy=args.rollout_policy,
             rollout_hands=args.rollout_hands,
             max_tree_hands=args.max_tree_hands,
+            root_top_k=args.root_top_k,
+            enable_rave=args.enable_rave,
+            rave_k=args.rave_k,
             seed=args.agent_seed,
         )
     if args.agent == 'dqn':
@@ -139,6 +142,9 @@ def parse_args():
     p.add_argument('--rollout-policy', type=str, default='heuristic', choices=['heuristic', 'random'])
     p.add_argument('--rollout-hands', type=int, default=2)
     p.add_argument('--max-tree-hands', type=int, default=2)
+    p.add_argument('--root-top-k', type=int, default=8)
+    p.add_argument('--enable-rave', action='store_true')
+    p.add_argument('--rave-k', type=float, default=1000)
 
     p.add_argument('--label', type=str, default=None)
     return p.parse_args()

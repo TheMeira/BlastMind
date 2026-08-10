@@ -48,7 +48,7 @@ def _pick_random_moves(state: GameState, engine: GameEngine):
 _AGENTS = {
     'greedy': GreedyAgent(),
     'beam': BeamAgent(),
-    'mcts': MCTSAgent(n_simulations=1000, time_limit=3.0),
+    'mcts': MCTSAgent(n_simulations=500, time_limit=3.0),
     'dqn': DQNAgent(checkpoint_path='models/dqn_v22prod_ep200000.pt', device='cpu', search_orderings=True),
 }
 
