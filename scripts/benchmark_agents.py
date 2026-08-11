@@ -33,7 +33,13 @@ def build_agent(args):
     if args.agent == 'greedy':
         return GreedyAgent()
     if args.agent == 'beam':
-        return BeamAgent(seed=args.agent_seed)
+        return BeamAgent(
+            beam_width=args.beam_width,
+            lookahead_depth=args.lookahead_depth,
+            samples=args.samples,
+            search_orderings=args.beam_search_orderings,
+            seed=args.agent_seed,
+        )
     if args.agent == 'mcts':
         return MCTSAgent(
             n_simulations=args.n_simulations,
@@ -131,6 +137,10 @@ def parse_args():
     p.add_argument('--checkpoint', type=str, default=None)
     p.add_argument('--device', type=str, default=None)
     p.add_argument('--dqn-search-orderings', action='store_true')
+    p.add_argument('--beam-width', type=int, default=8)
+    p.add_argument('--lookahead-depth', type=int, default=1)
+    p.add_argument('--samples', type=int, default=4)
+    p.add_argument('--beam-search-orderings', action='store_true')
     p.add_argument('--games', type=int, default=100)
     p.add_argument('--seed-base', type=int, default=1000)
     p.add_argument('--agent-seed', type=int, default=42)

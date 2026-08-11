@@ -11,19 +11,25 @@ _DEAD_END_PENALTY = -500.0
 
 class BeamAgent(GreedyAgent):
 
-    def __init__(self, beam_width=8, lookahead_depth=1, samples=4, seed=None):
+    def __init__(self, beam_width=8, lookahead_depth=1, samples=4, search_orderings=False, seed=None):
         self.beam_width = beam_width
         self.lookahead_depth = lookahead_depth
         self.samples = samples
+        self.search_orderings = search_orderings
         self._rng = random.Random(seed)
 
     def choose_moves(self, state: GameState, engine: GameEngine):
         piece_ids = list(state.pieces)
         grid = state.board.grid.copy()
 
-        finalists = self._topk_turn(grid, state.combo_count,
-                                    state.placements_without_clear,
-                                    piece_ids, self.beam_width)
+        if self.search_orderings:
+            finalists = self._topk_turn_orderings(grid, state.combo_count,
+                                                   state.placements_without_clear,
+                                                   piece_ids, self.beam_width)
+        else:
+            finalists = self._topk_turn(grid, state.combo_count,
+                                        state.placements_without_clear,
+                                        piece_ids, self.beam_width)
         if not finalists:
             return []
         if self.lookahead_depth == 0 or len(finalists) == 1:
@@ -74,6 +80,35 @@ class BeamAgent(GreedyAgent):
 
         finalists = [(val, g, cb, pc, moves) for val, _, g, cb, pc, moves in heap]
         finalists.sort(key=lambda t: t[0], reverse=True)
+        return finalists
+
+    def _topk_turn_orderings(self, grid, combo, pwc, piece_ids, k):
+        best_seen = {}
+        tiebreak = itertools.count()
+
+        def expand(g, cb, pc, remaining, gained, moves):
+            if not remaining:
+                val = self._eval(g, gained, 0)
+                key = (g.tobytes(), cb, pc)
+                existing = best_seen.get(key)
+                if existing is None or val > existing[0]:
+                    best_seen[key] = (val, next(tiebreak), g, cb, pc, moves)
+                return
+
+            pid = remaining[0]
+            piece = PIECES[pid]
+            ph, pw = piece.shape
+
+            for row, col in self._valid(g, piece, ph, pw):
+                ng, add, ncb, npc = self._place(g, piece, ph, pw, row, col, cb, pc)
+                expand(ng, ncb, npc, remaining[1:], gained + add,
+                       moves + [(pid, row, col)])
+
+        for order in dict.fromkeys(itertools.permutations(piece_ids)):
+            expand(grid, combo, pwc, list(order), 0, [])
+
+        ranked = sorted(best_seen.values(), key=lambda t: (-t[0], t[1]))
+        finalists = [(val, g, cb, pc, moves) for val, _, g, cb, pc, moves in ranked[:k]]
         return finalists
 
     def _beam_turn(self, grid, combo, pwc, piece_ids, width):
