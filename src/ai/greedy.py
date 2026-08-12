@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 
 from src.game.game_engine import GameEngine, GameState
@@ -13,6 +15,17 @@ class GreedyAgent:
     W_BUMPY  = -1.0
     W_HEIGHT = -0.5
 
+    def __init__(self, search_orderings=False, w_score=None, w_holes=None, w_bumpy=None, w_height=None):
+        self.search_orderings = search_orderings
+        if w_score is not None:
+            self.W_SCORE = w_score
+        if w_holes is not None:
+            self.W_HOLES = w_holes
+        if w_bumpy is not None:
+            self.W_BUMPY = w_bumpy
+        if w_height is not None:
+            self.W_HEIGHT = w_height
+
     def choose_moves(self, state: GameState, engine: GameEngine):
         piece_ids = list(state.pieces)
         grid = state.board.grid.copy()
@@ -20,8 +33,23 @@ class GreedyAgent:
         combo = state.combo_count
         pwc = state.placements_without_clear
 
-        _, moves = self._search(grid, combo, pwc, piece_ids, [], initial_score, initial_score)
+        if self.search_orderings:
+            _, moves = self._search_orderings(grid, combo, pwc, piece_ids, initial_score)
+        else:
+            _, moves = self._search(grid, combo, pwc, piece_ids, [], initial_score, initial_score)
         return moves or []
+
+    def _search_orderings(self, grid, combo, pwc, piece_ids, initial_score):
+        best_val = float('-inf')
+        best_moves = None
+
+        for order in dict.fromkeys(itertools.permutations(piece_ids)):
+            val, moves = self._search(grid, combo, pwc, list(order), [], initial_score, initial_score)
+            if moves is not None and val > best_val:
+                best_val = val
+                best_moves = moves
+
+        return best_val, best_moves
 
     def _search(self, grid, combo, pwc, remaining, moves, initial_score, cur_score):
         if not remaining:

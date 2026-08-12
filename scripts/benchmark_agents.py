@@ -31,7 +31,13 @@ def build_agent(args):
     if args.agent == 'random':
         return RandomAgent()
     if args.agent == 'greedy':
-        return GreedyAgent()
+        return GreedyAgent(
+            search_orderings=args.greedy_search_orderings,
+            w_score=args.greedy_w_score,
+            w_holes=args.greedy_w_holes,
+            w_bumpy=args.greedy_w_bumpy,
+            w_height=args.greedy_w_height,
+        )
     if args.agent == 'beam':
         return BeamAgent(
             beam_width=args.beam_width,
@@ -137,6 +143,11 @@ def parse_args():
     p.add_argument('--checkpoint', type=str, default=None)
     p.add_argument('--device', type=str, default=None)
     p.add_argument('--dqn-search-orderings', action='store_true')
+    p.add_argument('--greedy-search-orderings', action='store_true')
+    p.add_argument('--greedy-w-score', type=float, default=None)
+    p.add_argument('--greedy-w-holes', type=float, default=None)
+    p.add_argument('--greedy-w-bumpy', type=float, default=None)
+    p.add_argument('--greedy-w-height', type=float, default=None)
     p.add_argument('--beam-width', type=int, default=8)
     p.add_argument('--lookahead-depth', type=int, default=1)
     p.add_argument('--samples', type=int, default=4)
