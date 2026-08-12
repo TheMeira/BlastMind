@@ -24,8 +24,8 @@ class BlockBlastEnv:
     def candidates(self):
         return enumerate_placements(self.state.board.grid, self.current_piece())
 
-    def step(self, row, col):
-        pid = self.current_piece()
+    def step(self, row, col, pid=None):
+        pid = pid or self.current_piece()
         score_before = self.state.score
 
         self.state = self.engine.apply_placement(self.state, pid, row, col)

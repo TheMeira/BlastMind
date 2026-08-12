@@ -49,7 +49,7 @@ _AGENTS = {
     'greedy': GreedyAgent(),
     'beam': BeamAgent(beam_width=16, lookahead_depth=1, samples=8, search_orderings=True),
     'mcts': MCTSAgent(n_simulations=500, time_limit=3.0),
-    'dqn': DQNAgent(checkpoint_path='models/dqn_v22prod_ep200000.pt', device='cpu', search_orderings=True),
+    'dqn': DQNAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt', device='cpu', search_orderings=True),
 }
 
 

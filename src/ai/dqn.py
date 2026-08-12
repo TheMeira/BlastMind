@@ -166,6 +166,36 @@ def best_order_placement(net, device, grid, piece_ids, combo, pwc):
     return best_moves or []
 
 
+def best_order_placement_train(net, device, grid, piece_ids, combo, pwc):
+    best_quality = float('-inf')
+    best_moves = None
+
+    for order in dict.fromkeys(itertools.permutations(piece_ids)):
+        g, cb, pc = grid, combo, pwc
+        moves = []
+        total_score = 0.0
+        valid = True
+
+        for i, pid in enumerate(order):
+            result = best_placement(net, device, g, [pid] + list(order[i + 1:]), cb, pc)
+            if result is None:
+                valid = False
+                break
+            row, col, g, gained, cb, pc, combined_val = result
+            moves.append((pid, row, col, combined_val))
+            total_score += gained
+
+        if not valid:
+            continue
+
+        quality = total_score + GAMMA * state_value(net, device, g, cb, pc)
+        if quality > best_quality:
+            best_quality = quality
+            best_moves = moves
+
+    return (best_moves or []), (best_quality if best_moves else 0.0)
+
+
 class DQNAgent:
     def __init__(self, checkpoint_path=None, device=None, search_orderings=False):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')

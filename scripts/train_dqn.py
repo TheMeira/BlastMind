@@ -13,7 +13,8 @@ import torch.optim as optim
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.ai.dqn import DQNNet, GAMMA, best_placement, enumerate_placements, simulate_placement, encode_state
+from src.ai.dqn import (DQNNet, GAMMA, best_placement, best_order_placement_train,
+                         enumerate_placements, simulate_placement, encode_state)
 from src.ai.dqn_env import BlockBlastEnv
 from src.game.game_engine import GameEngine
 
@@ -204,8 +205,24 @@ def best_placement_batch(net, device, env_infos):
     return outputs
 
 
+def build_random_hand_plan(grid, piece_ids, combo, pwc):
+    order = list(piece_ids)
+    random.shuffle(order)
+    moves = []
+    g, cb, pc = grid, combo, pwc
+    for pid in order:
+        candidates = enumerate_placements(g, pid)
+        if not candidates:
+            break
+        row, col = random.choice(candidates)
+        moves.append((pid, row, col))
+        g, _, cb, pc = simulate_placement(g, pid, row, col, cb, pc)
+    return moves
+
+
 def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_counter, train=True,
-                 grad_clip=False, per=False, beta=None, value_clip=V_CLIP_MAX, n_step=1):
+                 grad_clip=False, per=False, beta=None, value_clip=V_CLIP_MAX, n_step=1,
+                 behavior_policy='fixed'):
     env.reset()
     steps = 0
     losses = []
@@ -215,6 +232,47 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
     raw_steps = []
 
     while True:
+        if behavior_policy == 'order_search':
+            pieces_now = list(env.state.pieces)
+            if not pieces_now or not env.candidates():
+                break
+
+            hand_is_random = train and random.random() < epsilon
+            if hand_is_random:
+                moves = build_random_hand_plan(env.state.board.grid, pieces_now,
+                                                env.state.combo_count, env.state.placements_without_clear)
+            else:
+                moves, _ = best_order_placement_train(online, device, env.state.board.grid, pieces_now,
+                                                        env.state.combo_count,
+                                                        env.state.placements_without_clear)
+            if not moves:
+                break
+
+            done = False
+            for entry in moves:
+                if hand_is_random:
+                    pid, row, col = entry
+                else:
+                    pid, row, col, combined_val = entry
+                    v_values.append(combined_val)
+
+                board_t, pieces_t = env.observe()
+                _, score_gained, done = env.step(row, col, pid=pid)
+                steps += 1
+
+                next_board_t, next_pieces_t = env.observe()
+                reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+
+                if train:
+                    raw_steps.append((board_t, pieces_t, reward, next_board_t, next_pieces_t, done))
+
+                if done:
+                    break
+
+            if done:
+                break
+            continue
+
         candidates = env.candidates()
         if not candidates:
             break
@@ -464,7 +522,13 @@ def main():
     parser.add_argument('--eps-end', type=float, default=EPS_END, help='epsilon floor value after decay')
     parser.add_argument('--value-clip', type=float, default=V_CLIP_MAX, help='max value for the TD bootstrap target')
     parser.add_argument('--n-step', type=int, default=1, help='number of steps to sum before bootstrapping')
+    parser.add_argument('--behavior-policy', type=str, default='fixed', choices=['fixed', 'order_search'],
+                         help='action-selection policy used to generate training data')
     args = parser.parse_args()
+
+    if args.behavior_policy == 'order_search' and args.parallel_envs > 1:
+        raise SystemExit('--behavior-policy order_search is not supported with --parallel-envs > 1 '
+                          '(batched order-search is not implemented; use --parallel-envs 1)')
 
     if args.sanity:
         args.episodes = 500
@@ -533,7 +597,8 @@ def main():
                 score, steps, loss, avg_v, grad_norm, clear_frac = run_episode(
                     env, online, target, optimizer, buffer, device, epsilon, step_counter,
                     train=True, grad_clip=args.grad_clip, per=args.per, beta=current_beta,
-                    value_clip=args.value_clip, n_step=args.n_step)
+                    value_clip=args.value_clip, n_step=args.n_step,
+                    behavior_policy=args.behavior_policy)
                 scores.append(score)
                 steps_hist.append(steps)
                 writer.writerow([ep, score, steps, f'{epsilon:.4f}', f'{current_lr:.8f}', f'{current_beta:.4f}',
