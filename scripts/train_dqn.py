@@ -333,14 +333,75 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
     return env.state.score, steps, avg_loss, avg_v, avg_grad_norm, avg_clear_frac
 
 
-def save_resume_bundle(path, online, target, optimizer, step_counter, counter):
-    torch.save({
+def _stack_transitions(transitions):
+    boards = torch.stack([t[0] for t in transitions])
+    pieces = torch.stack([t[1] for t in transitions])
+    rewards = torch.tensor([t[2] for t in transitions], dtype=torch.float32)
+    next_boards = torch.stack([t[3] for t in transitions])
+    next_pieces = torch.stack([t[4] for t in transitions])
+    dones = torch.tensor([t[5] for t in transitions], dtype=torch.bool)
+    gammas = torch.tensor([t[6] for t in transitions], dtype=torch.float32)
+    return {
+        'boards': boards, 'pieces': pieces, 'rewards': rewards,
+        'next_boards': next_boards, 'next_pieces': next_pieces,
+        'dones': dones, 'gammas': gammas,
+    }
+
+
+def _unstack_transitions(stacked):
+    boards = torch.unbind(stacked['boards'].cpu())
+    pieces = torch.unbind(stacked['pieces'].cpu())
+    rewards = stacked['rewards'].tolist()
+    next_boards = torch.unbind(stacked['next_boards'].cpu())
+    next_pieces = torch.unbind(stacked['next_pieces'].cpu())
+    dones = stacked['dones'].tolist()
+    gammas = stacked['gammas'].tolist()
+    return list(zip(boards, pieces, rewards, next_boards, next_pieces, dones, gammas))
+
+
+def save_resume_bundle(path, online, target, optimizer, step_counter, counter, buffer=None):
+    bundle = {
         'online': online.state_dict(),
         'target': target.state_dict(),
         'optimizer': optimizer.state_dict(),
         'step_counter': step_counter[0],
         'counter': counter,
-    }, path)
+    }
+    if buffer is not None:
+        if isinstance(buffer, PrioritizedReplayBuffer):
+            bundle['buffer_type'] = 'per'
+            bundle['buffer_stacked'] = _stack_transitions(buffer.data[:buffer.size])
+            bundle['buffer_priorities'] = torch.from_numpy(buffer.priorities[:buffer.size].copy())
+            bundle['buffer_pos'] = buffer.pos
+            bundle['buffer_size'] = buffer.size
+            bundle['buffer_max_priority'] = buffer.max_priority
+            bundle['buffer_capacity'] = buffer.capacity
+        else:
+            bundle['buffer_type'] = 'uniform'
+            bundle['buffer_stacked'] = _stack_transitions(list(buffer.buf))
+    torch.save(bundle, path)
+
+
+def load_buffer_from_bundle(bundle, buffer, args):
+    buffer_type = bundle.get('buffer_type')
+    if buffer_type is None:
+        return
+    transitions = _unstack_transitions(bundle['buffer_stacked'])
+    if buffer_type == 'uniform':
+        buffer.buf.extend(transitions)
+    elif buffer_type == 'per':
+        capacity = bundle.get('buffer_capacity')
+        if capacity != args.buffer_size:
+            raise SystemExit(f'resume bundle buffer_capacity ({capacity}) does not match '
+                              f'--buffer-size ({args.buffer_size}) — cannot safely restore a '
+                              f'PrioritizedReplayBuffer with a different capacity')
+        size = bundle['buffer_size']
+        for i in range(size):
+            buffer.data[i] = transitions[i]
+        buffer.priorities[:size] = bundle['buffer_priorities'].cpu().numpy()
+        buffer.pos = bundle['buffer_pos']
+        buffer.size = size
+        buffer.max_priority = bundle['buffer_max_priority']
 
 
 def train_parallel(args, online, target, optimizer, buffer, device, step_counter, out_dir, log_path,
@@ -568,7 +629,8 @@ def main():
         optimizer.load_state_dict(resume_bundle['optimizer'])
         step_counter[0] = resume_bundle['step_counter']
         start_counter = resume_bundle['counter']
-        print(f'resumed from {args.resume_from} at counter {start_counter}')
+        load_buffer_from_bundle(resume_bundle, buffer, args)
+        print(f'resumed from {args.resume_from} at counter {start_counter}, buffer size {len(buffer)}')
     log_mode = 'a' if (args.resume_from and log_path.exists()) else 'w'
     decay_horizon = args.decay_episodes if args.decay_episodes else args.episodes
 
@@ -615,7 +677,7 @@ def main():
                     ckpt_path = out_dir / f'dqn_v{args.version}_ep{ep}.pt'
                     torch.save(online.state_dict(), ckpt_path)
                     print(f'saved checkpoint: {ckpt_path}')
-                    save_resume_bundle(resume_path, online, target, optimizer, step_counter, ep)
+                    save_resume_bundle(resume_path, online, target, optimizer, step_counter, ep, buffer=buffer)
                     print(f'saved resume bundle: {resume_path}')
 
     if args.sanity:

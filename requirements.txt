@@ -5,5 +5,6 @@ torch
 pandas
 matplotlib
 seaborn
+scipy>=1.7
 python-multipart
 pytest

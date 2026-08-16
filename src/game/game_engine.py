@@ -14,6 +14,7 @@ class GameState:
     combo_count: int = 0
     placements_without_clear: int = 0
     game_over: bool = False
+    lines_cleared_total: int = 0
 
     def copy(self):
         return GameState(
@@ -23,6 +24,7 @@ class GameState:
             combo_count=self.combo_count,
             placements_without_clear=self.placements_without_clear,
             game_over=self.game_over,
+            lines_cleared_total=self.lines_cleared_total,
         )
 
 
@@ -48,6 +50,7 @@ class GameEngine:
 
         lines_cleared = new_state.board.clear_lines()
         new_state.score += self._line_clear_bonus(lines_cleared, new_state.combo_count)
+        new_state.lines_cleared_total += lines_cleared
 
         if lines_cleared > 0:
             new_state.combo_count += lines_cleared

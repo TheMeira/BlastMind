@@ -140,7 +140,7 @@ def best_order_placement(net, device, grid, piece_ids, combo, pwc):
     best_quality = float('-inf')
     best_moves = None
 
-    for order in set(itertools.permutations(piece_ids)):
+    for order in dict.fromkeys(itertools.permutations(piece_ids)):
         g, cb, pc = grid, combo, pwc
         moves = []
         total_score = 0.0
