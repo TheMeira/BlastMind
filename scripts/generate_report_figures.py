@@ -83,6 +83,50 @@ def chart_score_vs_survival_scatter():
     plt.close(fig)
 
 
+def chart_decision_time_vs_score():
+    summary = _load_summary()
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for a in _AGENTS:
+        time_ms = float(summary[a]['mean_decision_time_sec']) * 1000
+        score = float(summary[a]['mean_score'])
+        ax.scatter([max(time_ms, 0.01)], [score], s=180, color=_AGENT_COLORS[a],
+                   label=_AGENT_LABELS[a], zorder=3)
+        ax.annotate(_AGENT_LABELS[a], (max(time_ms, 0.01), score),
+                    textcoords='offset points', xytext=(8, 6), fontsize=10)
+
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel('Mean decision time per move (ms, log scale)')
+    ax.set_ylabel('Mean score (log scale)')
+    ax.set_title('Computational Cost vs. Score: Efficiency Trade-off')
+    fig.tight_layout()
+    fig.savefig(os.path.join(_CHARTS_DIR, 'decision_time_vs_score.png'), dpi=150)
+    plt.close(fig)
+
+
+def chart_density_over_time(min_games=10):
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for a in _AGENTS:
+        path = os.path.join(_RESULTS_DIR, f'final_benchmark_{a}_density.csv')
+        by_turn = {}
+        with open(path, newline='') as f:
+            for row in csv.DictReader(f):
+                by_turn.setdefault(int(row['turn_index']), []).append(float(row['density']))
+
+        turns = sorted(t for t, vals in by_turn.items() if len(vals) >= min_games)
+        means = [sum(by_turn[t]) / len(by_turn[t]) for t in turns]
+        ax.plot(turns, means, color=_AGENT_COLORS[a], linewidth=2, label=_AGENT_LABELS[a])
+
+    ax.set_xlabel(f'Turn index (shown while at least {min_games} games still in progress)')
+    ax.set_ylabel('Mean board density (fraction of cells filled)')
+    ax.set_title('Board Density Over Time by Agent (500 games each)')
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(_CHARTS_DIR, 'density_over_time.png'), dpi=150)
+    plt.close(fig)
+
+
 def chart_placement_heatmaps():
     fig, axes = plt.subplots(1, len(_AGENTS), figsize=(4 * len(_AGENTS), 4))
     for ax, a in zip(axes, _AGENTS):
@@ -138,6 +182,29 @@ def chart_beam_sweeps():
     plt.close(fig)
 
 
+def chart_beam_sweeps_line():
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+
+    for ax, (title, sweep, adopted) in zip(axes, [
+        ('Beam width sweep', _BEAM_WIDTH_SWEEP, 16),
+        ('Lookahead depth sweep (width=16)', _BEAM_DEPTH_SWEEP, 1),
+        ('Samples sweep (width=16, depth=1)', _BEAM_SAMPLES_SWEEP, 8),
+    ]):
+        keys = sorted(sweep.keys())
+        medians = [sweep[k][1] for k in keys]
+        ax.plot(keys, medians, marker='o', color='#54a24b', linewidth=2)
+        adopted_idx = keys.index(adopted)
+        ax.scatter([keys[adopted_idx]], [medians[adopted_idx]], color='#2d5a1f', s=100, zorder=5)
+        ax.set_title(title)
+        ax.set_ylabel('Median score')
+        ax.set_xticks(keys)
+
+    fig.suptitle('Beam Search Hyperparameter Sweeps (line variant, adopted value marked)')
+    fig.tight_layout()
+    fig.savefig(os.path.join(_CHARTS_DIR, 'beam_hyperparameter_sweeps_line.png'), dpi=150)
+    plt.close(fig)
+
+
 def chart_mcts_budget():
     keys = sorted(_MCTS_NSIM_SWEEP.keys())
     values = [_MCTS_NSIM_SWEEP[k] for k in keys]
@@ -150,6 +217,22 @@ def chart_mcts_budget():
     ax.set_title('MCTS Simulation Budget Sweep (adopted value in teal)')
     fig.tight_layout()
     fig.savefig(os.path.join(_CHARTS_DIR, 'mcts_simulation_budget.png'), dpi=150)
+    plt.close(fig)
+
+
+def chart_mcts_budget_line():
+    keys = sorted(_MCTS_NSIM_SWEEP.keys())
+    values = [_MCTS_NSIM_SWEEP[k] for k in keys]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(keys, values, marker='o', color='#72b7b2', linewidth=2)
+    adopted_idx = keys.index(500)
+    ax.scatter([keys[adopted_idx]], [values[adopted_idx]], color='#2c6e68', s=100, zorder=5)
+    ax.set_xlabel('n_simulations')
+    ax.set_ylabel('Mean score')
+    ax.set_title('MCTS Simulation Budget Sweep (line variant, adopted value marked)')
+    fig.tight_layout()
+    fig.savefig(os.path.join(_CHARTS_DIR, 'mcts_simulation_budget_line.png'), dpi=150)
     plt.close(fig)
 
 
@@ -212,13 +295,17 @@ def main():
     chart_bar_mean_ci()
     chart_box_distributions()
     chart_score_vs_survival_scatter()
+    chart_decision_time_vs_score()
+    chart_density_over_time()
     chart_placement_heatmaps()
     chart_beam_sweeps()
+    chart_beam_sweeps_line()
     chart_mcts_budget()
+    chart_mcts_budget_line()
     chart_mcts_rollout_comparison()
     chart_dqn_milestones()
     chart_dqn_final_lineage()
-    print(f"Saved 9 charts to {_CHARTS_DIR}")
+    print(f"Saved 10 charts to {_CHARTS_DIR}")
 
 
 if __name__ == '__main__':

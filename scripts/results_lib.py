@@ -33,6 +33,8 @@ def summary_stats(scores):
         'stdev': stdev,
         'ci95_low': ci_low,
         'ci95_high': ci_high,
+        'min': float(sorted_arr[0]),
+        'max': float(sorted_arr[-1]),
     }
 
 

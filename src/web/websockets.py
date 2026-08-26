@@ -12,6 +12,7 @@ from src.ai.greedy import GreedyAgent
 from src.ai.beam import BeamAgent
 from src.ai.mcts import MCTSAgent
 from src.ai.dqn import DQNAgent
+from src.ai.dqn_search import DQNSearchAgent
 
 _EXECUTOR = ProcessPoolExecutor(max_workers=5, mp_context=multiprocessing.get_context('spawn'))
 
@@ -49,7 +50,7 @@ _AGENTS = {
     'greedy': GreedyAgent(search_orderings=True),
     'beam': BeamAgent(beam_width=16, lookahead_depth=1, samples=8, search_orderings=True),
     'mcts': MCTSAgent(n_simulations=500, time_limit=3.0),
-    'dqn': DQNAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt', device='cpu', search_orderings=True),
+    'dqn': DQNSearchAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt', device='cpu', seed=42),
 }
 
 

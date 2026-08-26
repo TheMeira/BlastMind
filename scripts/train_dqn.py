@@ -14,7 +14,7 @@ import torch.optim as optim
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.ai.dqn import (DQNNet, GAMMA, best_placement, best_order_placement_train,
-                         enumerate_placements, simulate_placement, encode_state)
+                         enumerate_placements, simulate_placement, encode_state, reset_head)
 from src.ai.dqn_env import BlockBlastEnv
 from src.game.game_engine import GameEngine
 
@@ -104,7 +104,7 @@ def beta_at(episode, total_episodes):
     return PER_BETA_START + (1.0 - PER_BETA_START) * frac
 
 
-def compute_loss(online, target, batch, device, value_clip=V_CLIP_MAX):
+def compute_loss(online, target, batch, device, value_clip=V_CLIP_MAX, popart=False, popart_beta=1e-4):
     boards      = torch.stack([b[0] for b in batch]).to(device)
     pieces      = torch.stack([b[1] for b in batch]).to(device)
     rewards     = torch.tensor([b[2] for b in batch], dtype=torch.float32, device=device)
@@ -113,17 +113,23 @@ def compute_loss(online, target, batch, device, value_clip=V_CLIP_MAX):
     dones       = torch.tensor([b[5] for b in batch], dtype=torch.float32, device=device)
     gammas      = torch.tensor([b[6] for b in batch], dtype=torch.float32, device=device)
 
+    with torch.no_grad():
+        v_next_raw = target(next_boards, next_pieces).squeeze(1)
+        v_next_real = target.unnormalize(v_next_raw)
+        target_real = rewards + gammas * (1 - dones) * v_next_real
+        if not popart:
+            target_real = torch.clamp(target_real, max=value_clip)
+
+    if popart:
+        online.update_popart_stats(target_real, popart_beta)
+
+    target_for_loss = online.normalize(target_real)
     v_pred = online(boards, pieces).squeeze(1)
 
-    with torch.no_grad():
-        v_next = target(next_boards, next_pieces).squeeze(1)
-        target_v = rewards + gammas * (1 - dones) * v_next
-        target_v = torch.clamp(target_v, max=value_clip)
-
-    return nn.functional.smooth_l1_loss(v_pred, target_v)
+    return nn.functional.smooth_l1_loss(v_pred, target_for_loss)
 
 
-def compute_loss_per(online, target, batch, weights, device, value_clip=V_CLIP_MAX):
+def compute_loss_per(online, target, batch, weights, device, value_clip=V_CLIP_MAX, popart=False, popart_beta=1e-4):
     boards      = torch.stack([b[0] for b in batch]).to(device)
     pieces      = torch.stack([b[1] for b in batch]).to(device)
     rewards     = torch.tensor([b[2] for b in batch], dtype=torch.float32, device=device)
@@ -133,15 +139,21 @@ def compute_loss_per(online, target, batch, weights, device, value_clip=V_CLIP_M
     gammas      = torch.tensor([b[6] for b in batch], dtype=torch.float32, device=device)
     weights_t   = torch.tensor(weights, dtype=torch.float32, device=device)
 
+    with torch.no_grad():
+        v_next_raw = target(next_boards, next_pieces).squeeze(1)
+        v_next_real = target.unnormalize(v_next_raw)
+        target_real = rewards + gammas * (1 - dones) * v_next_real
+        if not popart:
+            target_real = torch.clamp(target_real, max=value_clip)
+
+    if popart:
+        online.update_popart_stats(target_real, popart_beta)
+
+    target_for_loss = online.normalize(target_real)
     v_pred = online(boards, pieces).squeeze(1)
 
-    with torch.no_grad():
-        v_next = target(next_boards, next_pieces).squeeze(1)
-        target_v = rewards + gammas * (1 - dones) * v_next
-        target_v = torch.clamp(target_v, max=value_clip)
-
-    td_errors = target_v - v_pred
-    per_sample_loss = nn.functional.smooth_l1_loss(v_pred, target_v, reduction='none')
+    td_errors = target_for_loss - v_pred
+    per_sample_loss = nn.functional.smooth_l1_loss(v_pred, target_for_loss, reduction='none')
     weighted_loss = (weights_t * per_sample_loss).mean()
 
     return weighted_loss, td_errors.detach().abs().cpu().numpy()
@@ -166,6 +178,64 @@ def make_n_step_transitions(raw_steps, n_step):
     return transitions
 
 
+def calibrate_popart(online, target, optimizer, device, behavior_policy, seed=None, n_targets=300):
+    calib_env = BlockBlastEnv(seed=(seed + 999_999 if seed is not None else None))
+    calib_env.reset()
+    raw_targets = []
+
+    while len(raw_targets) < n_targets:
+        if behavior_policy == 'order_search':
+            pieces_now = list(calib_env.state.pieces)
+            if not pieces_now or not calib_env.candidates():
+                calib_env.reset()
+                continue
+            moves, _ = best_order_placement_train(online, device, calib_env.state.board.grid, pieces_now,
+                                                    calib_env.state.combo_count,
+                                                    calib_env.state.placements_without_clear)
+            if not moves:
+                calib_env.reset()
+                continue
+            for pid, row, col, _ in moves:
+                _, score_gained, done = calib_env.step(row, col, pid=pid)
+                next_board_t, next_pieces_t = calib_env.observe()
+                with torch.no_grad():
+                    v_next_raw = target(next_board_t.unsqueeze(0).to(device),
+                                         next_pieces_t.unsqueeze(0).to(device)).squeeze(1)
+                    v_next_real = target.unnormalize(v_next_raw).item()
+                reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+                raw_targets.append(reward + GAMMA * (0.0 if done else 1.0) * v_next_real)
+                if done:
+                    calib_env.reset()
+                    break
+                if len(raw_targets) >= n_targets:
+                    break
+        else:
+            candidates = calib_env.candidates()
+            if not candidates:
+                calib_env.reset()
+                continue
+            result = best_placement(online, device, calib_env.state.board.grid, list(calib_env.state.pieces),
+                                     calib_env.state.combo_count, calib_env.state.placements_without_clear)
+            row, col = result[0], result[1]
+            _, score_gained, done = calib_env.step(row, col)
+            next_board_t, next_pieces_t = calib_env.observe()
+            with torch.no_grad():
+                v_next_raw = target(next_board_t.unsqueeze(0).to(device),
+                                     next_pieces_t.unsqueeze(0).to(device)).squeeze(1)
+                v_next_real = target.unnormalize(v_next_raw).item()
+            reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+            raw_targets.append(reward + GAMMA * (0.0 if done else 1.0) * v_next_real)
+            if done:
+                calib_env.reset()
+
+    targets_tensor = torch.tensor(raw_targets, dtype=torch.float32, device=device)
+    online.update_popart_stats(targets_tensor, beta=1.0)
+    target.load_state_dict(online.state_dict())
+    for p in online.fc[-1].parameters():
+        optimizer.state[p] = {}
+    return float(targets_tensor.mean().item()), float(targets_tensor.std().item())
+
+
 def best_placement_batch(net, device, env_infos):
     all_boards, all_pieces, all_scores, all_results, counts = [], [], [], [], []
     for grid, piece_ids, combo, pwc in env_infos:
@@ -187,7 +257,8 @@ def best_placement_batch(net, device, env_infos):
     with torch.no_grad():
         nb_batch = torch.stack(all_boards).to(device)
         np_batch = torch.stack(all_pieces).to(device)
-        v_vals = net(nb_batch, np_batch).squeeze(1).cpu().numpy()
+        raw_v = net(nb_batch, np_batch).squeeze(1)
+        v_vals = net.unnormalize(raw_v).cpu().numpy()
 
     combined = np.array(all_scores, dtype=np.float32) + GAMMA * v_vals
 
@@ -220,9 +291,21 @@ def build_random_hand_plan(grid, piece_ids, combo, pwc):
     return moves
 
 
+def random_single_placement(grid, piece_ids):
+    order = list(piece_ids)
+    random.shuffle(order)
+    for pid in order:
+        candidates = enumerate_placements(grid, pid)
+        if candidates:
+            row, col = random.choice(candidates)
+            return pid, row, col
+    return None
+
+
 def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_counter, train=True,
                  grad_clip=False, per=False, beta=None, value_clip=V_CLIP_MAX, n_step=1,
-                 behavior_policy='fixed'):
+                 behavior_policy='fixed', per_piece_epsilon=False, reward_scale=1.0,
+                 popart=False, popart_beta=1e-4):
     env.reset()
     steps = 0
     losses = []
@@ -232,6 +315,49 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
     raw_steps = []
 
     while True:
+        if behavior_policy == 'order_search' and per_piece_epsilon:
+            pieces_now = list(env.state.pieces)
+            if not pieces_now or not env.candidates():
+                break
+
+            moves, _ = best_order_placement_train(online, device, env.state.board.grid, pieces_now,
+                                                    env.state.combo_count,
+                                                    env.state.placements_without_clear)
+            if not moves:
+                break
+
+            done = False
+            for entry in moves:
+                pid, row, col, combined_val = entry
+                deviated = False
+                if train and random.random() < epsilon:
+                    remaining = list(env.state.pieces)
+                    result = random_single_placement(env.state.board.grid, remaining)
+                    if result is None:
+                        done = True
+                        break
+                    pid, row, col = result
+                    combined_val = None
+                    deviated = True
+
+                board_t, pieces_t = env.observe()
+                _, score_gained, done = env.step(row, col, pid=pid)
+                steps += 1
+                next_board_t, next_pieces_t = env.observe()
+                reward = reward_scale * (float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0))
+
+                if train:
+                    raw_steps.append((board_t, pieces_t, reward, next_board_t, next_pieces_t, done))
+                if combined_val is not None:
+                    v_values.append(combined_val)
+
+                if done or deviated:
+                    break
+
+            if done:
+                break
+            continue
+
         if behavior_policy == 'order_search':
             pieces_now = list(env.state.pieces)
             if not pieces_now or not env.candidates():
@@ -261,7 +387,7 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
                 steps += 1
 
                 next_board_t, next_pieces_t = env.observe()
-                reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+                reward = reward_scale * (float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0))
 
                 if train:
                     raw_steps.append((board_t, pieces_t, reward, next_board_t, next_pieces_t, done))
@@ -290,7 +416,7 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
         steps += 1
 
         next_board_t, next_pieces_t = env.observe()
-        reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+        reward = reward_scale * (float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0))
 
         if train:
             raw_steps.append((board_t, pieces_t, reward, next_board_t, next_pieces_t, done))
@@ -304,13 +430,16 @@ def run_episode(env, online, target, optimizer, buffer, device, epsilon, step_co
             if len(buffer) >= BATCH_SIZE:
                 if per:
                     batch, indices, weights = buffer.sample(BATCH_SIZE, beta)
-                    loss, td_errors = compute_loss_per(online, target, batch, weights, device, value_clip)
+                    loss, td_errors = compute_loss_per(online, target, batch, weights, device, value_clip,
+                                                        popart=popart, popart_beta=popart_beta)
                 else:
                     batch = buffer.sample(BATCH_SIZE)
-                    loss = compute_loss(online, target, batch, device, value_clip)
+                    loss = compute_loss(online, target, batch, device, value_clip,
+                                         popart=popart, popart_beta=popart_beta)
 
                 batch_rewards = [b[2] for b in batch]
-                clear_frac = sum(1 for r in batch_rewards if r > PLACE_BONUS + 1) / len(batch_rewards)
+                clear_frac = (sum(1 for r in batch_rewards if r > (PLACE_BONUS + 1) * reward_scale)
+                              / len(batch_rewards))
                 clear_fracs.append(clear_frac)
 
                 optimizer.zero_grad()
@@ -465,7 +594,7 @@ def train_parallel(args, online, target, optimizer, buffer, device, step_counter
                 env_steps[i] += 1
 
                 next_board_t, next_pieces_t = env.observe()
-                reward = float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0)
+                reward = args.reward_scale * (float(score_gained) + PLACE_BONUS - (GAME_OVER_PENALTY if done else 0.0))
                 env_raw_steps[i].append((board_t, pieces_t, reward, next_board_t, next_pieces_t, done))
 
                 if done:
@@ -476,13 +605,16 @@ def train_parallel(args, online, target, optimizer, buffer, device, step_counter
                             if per:
                                 batch, indices, weights = buffer.sample(BATCH_SIZE, current_beta)
                                 loss, td_errors = compute_loss_per(online, target, batch, weights, device,
-                                                                    args.value_clip)
+                                                                    args.value_clip, popart=args.popart,
+                                                                    popart_beta=args.popart_beta)
                             else:
                                 batch = buffer.sample(BATCH_SIZE)
-                                loss = compute_loss(online, target, batch, device, args.value_clip)
+                                loss = compute_loss(online, target, batch, device, args.value_clip,
+                                                     popart=args.popart, popart_beta=args.popart_beta)
 
                             batch_rewards = [b[2] for b in batch]
-                            clear_frac = sum(1 for r in batch_rewards if r > PLACE_BONUS + 1) / len(batch_rewards)
+                            clear_frac = (sum(1 for r in batch_rewards if r > (PLACE_BONUS + 1) * args.reward_scale)
+                                          / len(batch_rewards))
                             env_clear_fracs[i].append(clear_frac)
 
                             optimizer.zero_grad()
@@ -524,7 +656,8 @@ def train_parallel(args, online, target, optimizer, buffer, device, step_counter
                         ckpt_path = out_dir / f'dqn_v{args.version}_ep{games_completed}.pt'
                         torch.save(online.state_dict(), ckpt_path)
                         print(f'saved checkpoint: {ckpt_path}')
-                        save_resume_bundle(resume_path, online, target, optimizer, step_counter, games_completed)
+                        save_resume_bundle(resume_path, online, target, optimizer, step_counter, games_completed,
+                                            buffer=buffer)
                         print(f'saved resume bundle: {resume_path}')
 
                     env.reset()
@@ -582,14 +715,29 @@ def main():
     parser.add_argument('--buffer-size', type=int, default=BUFFER_SIZE, help='replay buffer capacity (transitions)')
     parser.add_argument('--eps-end', type=float, default=EPS_END, help='epsilon floor value after decay')
     parser.add_argument('--value-clip', type=float, default=V_CLIP_MAX, help='max value for the TD bootstrap target')
+    parser.add_argument('--reward-scale', type=float, default=1.0,
+                         help='multiplicative constant applied to the entire reward formula')
     parser.add_argument('--n-step', type=int, default=1, help='number of steps to sum before bootstrapping')
     parser.add_argument('--behavior-policy', type=str, default='fixed', choices=['fixed', 'order_search'],
                          help='action-selection policy used to generate training data')
+    parser.add_argument('--per-piece-epsilon', action='store_true',
+                         help='roll epsilon per piece placement instead of per hand (order_search only)')
+    parser.add_argument('--reset-head-at', type=int, default=None,
+                         help='absolute episode number at which to reset the fc head (loss-of-plasticity fix)')
+    parser.add_argument('--reset-head-lr-start', type=float, default=LR_START,
+                         help='LR to restart decay from at --reset-head-at, decaying back to LR_END by --episodes')
+    parser.add_argument('--popart', action='store_true',
+                         help='adaptively normalize the TD target instead of a fixed --value-clip')
+    parser.add_argument('--popart-beta', type=float, default=1e-4,
+                         help='EMA decay rate for the PopArt running target-distribution statistics')
     args = parser.parse_args()
 
     if args.behavior_policy == 'order_search' and args.parallel_envs > 1:
         raise SystemExit('--behavior-policy order_search is not supported with --parallel-envs > 1 '
                           '(batched order-search is not implemented; use --parallel-envs 1)')
+
+    if args.per_piece_epsilon and args.behavior_policy != 'order_search':
+        raise SystemExit('--per-piece-epsilon requires --behavior-policy order_search')
 
     if args.sanity:
         args.episodes = 500
@@ -624,13 +772,22 @@ def main():
     start_counter = 0
     if args.resume_from:
         resume_bundle = torch.load(args.resume_from, map_location=device)
-        online.load_state_dict(resume_bundle['online'])
-        target.load_state_dict(resume_bundle['target'])
+        online.load_state_dict(resume_bundle['online'], strict=False)
+        target.load_state_dict(resume_bundle['target'], strict=False)
         optimizer.load_state_dict(resume_bundle['optimizer'])
         step_counter[0] = resume_bundle['step_counter']
         start_counter = resume_bundle['counter']
         load_buffer_from_bundle(resume_bundle, buffer, args)
         print(f'resumed from {args.resume_from} at counter {start_counter}, buffer size {len(buffer)}')
+    if args.reset_head_at is not None and args.reset_head_at <= start_counter:
+        raise SystemExit(f'--reset-head-at {args.reset_head_at} <= resumed counter {start_counter} -- '
+                          f'the reset would never fire, refusing to silently run a mislabeled experiment')
+
+    if args.popart and args.resume_from and online.popart_nu.item() == 0.0 and online.popart_omega.item() == 1.0:
+        calib_mean, calib_std = calibrate_popart(online, target, optimizer, device, args.behavior_policy,
+                                                   seed=args.seed)
+        print(f'popart calibration: observed target mean={calib_mean:.2f} std={calib_std:.2f}, '
+              f'rescaled fc head and cleared its optimizer state')
     log_mode = 'a' if (args.resume_from and log_path.exists()) else 'w'
     decay_horizon = args.decay_episodes if args.decay_episodes else args.episodes
 
@@ -651,8 +808,16 @@ def main():
                                   'grad_norm', 'clear_frac'])
 
             for ep in range(start_counter + 1, args.episodes + 1):
+                if args.reset_head_at is not None and ep == args.reset_head_at:
+                    reset_head(online, target, optimizer)
+                    print(f'ep {ep}: reset fc head (loss-of-plasticity fix)')
+
                 epsilon = epsilon_at(ep, decay_horizon, args.eps_end)
-                current_lr = lr_at(ep, decay_horizon) if args.lr_decay else LR_START
+                if args.reset_head_at is not None and ep >= args.reset_head_at:
+                    frac = min(1.0, (ep - args.reset_head_at) / max(1, args.episodes - args.reset_head_at))
+                    current_lr = args.reset_head_lr_start + (LR_END - args.reset_head_lr_start) * frac
+                else:
+                    current_lr = lr_at(ep, decay_horizon) if args.lr_decay else LR_START
                 current_beta = beta_at(ep, decay_horizon) if args.per else 0.0
                 for g in optimizer.param_groups:
                     g['lr'] = current_lr
@@ -660,7 +825,8 @@ def main():
                     env, online, target, optimizer, buffer, device, epsilon, step_counter,
                     train=True, grad_clip=args.grad_clip, per=args.per, beta=current_beta,
                     value_clip=args.value_clip, n_step=args.n_step,
-                    behavior_policy=args.behavior_policy)
+                    behavior_policy=args.behavior_policy, per_piece_epsilon=args.per_piece_epsilon,
+                    reward_scale=args.reward_scale, popart=args.popart, popart_beta=args.popart_beta)
                 scores.append(score)
                 steps_hist.append(steps)
                 writer.writerow([ep, score, steps, f'{epsilon:.4f}', f'{current_lr:.8f}', f'{current_beta:.4f}',

@@ -11,6 +11,9 @@ PIECE_N = 5
 GAMMA = 0.99
 
 
+POPART_SIGMA_FLOOR = 1e-2
+
+
 class DQNNet(nn.Module):
     def __init__(self):
         super().__init__()
@@ -29,11 +32,49 @@ class DQNNet(nn.Module):
             nn.Linear(512, 256), nn.ReLU(),
             nn.Linear(256, 1),
         )
+        self.register_buffer('popart_nu', torch.tensor(0.0))
+        self.register_buffer('popart_omega', torch.tensor(1.0))
 
     def forward(self, board, pieces):
         b = self.board_conv(board).flatten(1)
         p = self.piece_conv(pieces).flatten(1)
         return self.fc(torch.cat([b, p], dim=1))
+
+    def _popart_sigma(self):
+        variance = self.popart_omega - self.popart_nu ** 2
+        return torch.sqrt(torch.clamp(variance, min=POPART_SIGMA_FLOOR ** 2))
+
+    def normalize(self, raw_value):
+        return (raw_value - self.popart_nu) / self._popart_sigma()
+
+    def unnormalize(self, net_output):
+        return net_output * self._popart_sigma() + self.popart_nu
+
+    def update_popart_stats(self, raw_targets, beta):
+        with torch.no_grad():
+            mu_old = self.popart_nu.clone()
+            sigma_old = self._popart_sigma()
+
+            batch_mean = raw_targets.mean()
+            batch_mean_sq = (raw_targets ** 2).mean()
+            self.popart_nu.mul_(1 - beta).add_(beta * batch_mean)
+            self.popart_omega.mul_(1 - beta).add_(beta * batch_mean_sq)
+
+            mu_new = self.popart_nu.clone()
+            sigma_new = self._popart_sigma()
+
+            last_linear = self.fc[-1]
+            last_linear.weight.mul_(sigma_old / sigma_new)
+            last_linear.bias.mul_(sigma_old / sigma_new).add_((mu_old - mu_new) / sigma_new)
+
+
+def reset_head(online, target, optimizer):
+    for layer in online.fc:
+        if isinstance(layer, nn.Linear):
+            layer.reset_parameters()
+    target.load_state_dict(online.state_dict())
+    for p in online.fc.parameters():
+        optimizer.state[p] = {}
 
 
 def encode_board(grid, combo, pwc):
@@ -101,7 +142,7 @@ def simulate_placement(grid, piece_id, row, col, combo, pwc):
     return ng, cells + bonus, new_combo, new_pwc
 
 
-def best_placement(net, device, grid, piece_ids, combo, pwc):
+def best_placement(net, device, grid, piece_ids, combo, pwc, value_weight=1.0):
     pid = piece_ids[0]
     candidates = enumerate_placements(grid, pid)
     if not candidates:
@@ -120,9 +161,10 @@ def best_placement(net, device, grid, piece_ids, combo, pwc):
     with torch.no_grad():
         nb_batch = torch.stack(next_boards).to(device)
         np_batch = torch.stack(next_pieces).to(device)
-        v_vals = net(nb_batch, np_batch).squeeze(1).cpu().numpy()
+        raw_v = net(nb_batch, np_batch).squeeze(1)
+        v_vals = net.unnormalize(raw_v).cpu().numpy()
 
-    combined = np.array(scores, dtype=np.float32) + GAMMA * v_vals
+    combined = np.array(scores, dtype=np.float32) + value_weight * GAMMA * v_vals
     best_idx = int(np.argmax(combined))
     row, col = candidates[best_idx]
     next_grid, new_combo, new_pwc = results[best_idx]
@@ -133,10 +175,11 @@ def state_value(net, device, grid, combo, pwc):
     board_t, pieces_t = encode_state(grid, [], combo, pwc)
     with torch.no_grad():
         v = net(board_t.unsqueeze(0).to(device), pieces_t.unsqueeze(0).to(device))
+        v = net.unnormalize(v)
     return float(v.item())
 
 
-def best_order_placement(net, device, grid, piece_ids, combo, pwc):
+def best_order_placement(net, device, grid, piece_ids, combo, pwc, value_weight=1.0):
     best_quality = float('-inf')
     best_moves = None
 
@@ -147,7 +190,8 @@ def best_order_placement(net, device, grid, piece_ids, combo, pwc):
         valid = True
 
         for i, pid in enumerate(order):
-            result = best_placement(net, device, g, [pid] + list(order[i + 1:]), cb, pc)
+            result = best_placement(net, device, g, [pid] + list(order[i + 1:]), cb, pc,
+                                    value_weight)
             if result is None:
                 valid = False
                 break
@@ -158,7 +202,7 @@ def best_order_placement(net, device, grid, piece_ids, combo, pwc):
         if not valid:
             continue
 
-        quality = total_score + GAMMA * state_value(net, device, g, cb, pc)
+        quality = total_score + value_weight * GAMMA * state_value(net, device, g, cb, pc)
         if quality > best_quality:
             best_quality = quality
             best_moves = moves
@@ -197,13 +241,15 @@ def best_order_placement_train(net, device, grid, piece_ids, combo, pwc):
 
 
 class DQNAgent:
-    def __init__(self, checkpoint_path=None, device=None, search_orderings=False):
+    def __init__(self, checkpoint_path=None, device=None, search_orderings=False,
+                 value_weight=1.0):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.net = DQNNet().to(self.device)
         if checkpoint_path:
-            self.net.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
+            self.net.load_state_dict(torch.load(checkpoint_path, map_location=self.device), strict=False)
         self.net.eval()
         self.search_orderings = search_orderings
+        self.value_weight = value_weight
 
     def choose_moves(self, state, engine):
         grid = state.board.grid.copy()
@@ -212,11 +258,13 @@ class DQNAgent:
         pwc = state.placements_without_clear
 
         if self.search_orderings:
-            return best_order_placement(self.net, self.device, grid, piece_ids, combo, pwc)
+            return best_order_placement(self.net, self.device, grid, piece_ids, combo, pwc,
+                                        self.value_weight)
 
         moves = []
         for i, pid in enumerate(piece_ids):
-            result = best_placement(self.net, self.device, grid, piece_ids[i:], combo, pwc)
+            result = best_placement(self.net, self.device, grid, piece_ids[i:], combo, pwc,
+                                    self.value_weight)
             if result is None:
                 break
             row, col, grid, _, combo, pwc, _ = result

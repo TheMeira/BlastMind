@@ -12,6 +12,8 @@ from src.ai.greedy import GreedyAgent
 from src.ai.beam import BeamAgent
 from src.ai.mcts import MCTSAgent
 from src.ai.dqn import DQNAgent
+from src.ai.dqn_pool import DQNPoolAgent
+from src.ai.dqn_search import DQNSearchAgent
 
 
 def _random_choose_moves(agent, state, engine):
@@ -59,6 +61,18 @@ def build_agent(args):
             rave_k=args.rave_k,
             seed=args.agent_seed,
         )
+    if args.agent == 'dqnsearch':
+        if not args.checkpoint:
+            raise ValueError("--checkpoint is required for --agent dqnsearch")
+        return DQNSearchAgent(checkpoint_path=args.checkpoint, device=args.device,
+                              max_candidates=args.max_candidates,
+                              value_weight=args.dqn_value_weight, seed=args.agent_seed)
+    if args.agent == 'dqnpool':
+        if not args.checkpoint:
+            raise ValueError("--checkpoint is required for --agent dqnpool")
+        return DQNPoolAgent(checkpoint_path=args.checkpoint, device=args.device,
+                            pool_k=args.pool_k, beam_width=args.beam_width,
+                            value_weight=args.dqn_value_weight)
     if args.agent == 'dqn':
         if not args.checkpoint:
             raise ValueError("--checkpoint is required for --agent dqn")
@@ -139,7 +153,7 @@ def write_csv(rows, out_path):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument('--agent', required=True, choices=['random', 'greedy', 'beam', 'mcts', 'dqn'])
+    p.add_argument('--agent', required=True, choices=['random', 'greedy', 'beam', 'mcts', 'dqn', 'dqnpool', 'dqnsearch'])
     p.add_argument('--checkpoint', type=str, default=None)
     p.add_argument('--device', type=str, default=None)
     p.add_argument('--dqn-search-orderings', action='store_true')
@@ -152,6 +166,9 @@ def parse_args():
     p.add_argument('--lookahead-depth', type=int, default=1)
     p.add_argument('--samples', type=int, default=4)
     p.add_argument('--beam-search-orderings', action='store_true')
+    p.add_argument('--pool-k', type=int, default=50)
+    p.add_argument('--max-candidates', type=int, default=20000)
+    p.add_argument('--dqn-value-weight', type=float, default=1.0)
     p.add_argument('--games', type=int, default=100)
     p.add_argument('--seed-base', type=int, default=1000)
     p.add_argument('--agent-seed', type=int, default=42)

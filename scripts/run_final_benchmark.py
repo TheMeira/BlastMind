@@ -19,6 +19,10 @@ from results_lib import summary_stats
 _BOARD = 8
 _AGENT_SEED = 42
 
+_DETAIL_FIELDNAMES = ['seed', 'final_score', 'lines_cleared', 'max_combo', 'hands_played',
+                      'pieces_placed', 'avg_move_time_sec', 'total_move_time_sec']
+_DENSITY_FIELDNAMES = ['seed', 'turn_index', 'density']
+
 
 def build_agents():
     return {
@@ -53,6 +57,7 @@ def run_game_detailed(agent, seed, agent_name, heatmap):
     pieces_placed = 0
     max_combo = 0
     move_times = []
+    density_sequence = []
 
     while not state.game_over:
         t0 = time.perf_counter()
@@ -73,13 +78,14 @@ def run_game_detailed(agent, seed, agent_name, heatmap):
             max_combo = max(max_combo, state.combo_count)
 
         hands_played += 1
+        density_sequence.append(float(state.board.grid.sum()) / (_BOARD * _BOARD))
 
         if len(state.pieces) == 0:
             state = engine.start_new_turn(state)
 
     avg_move_time = sum(move_times) / len(move_times) if move_times else 0.0
 
-    return {
+    result = {
         'seed': seed,
         'final_score': state.score,
         'lines_cleared': state.lines_cleared_total,
@@ -89,53 +95,110 @@ def run_game_detailed(agent, seed, agent_name, heatmap):
         'avg_move_time_sec': avg_move_time,
         'total_move_time_sec': sum(move_times),
     }
+    return result, density_sequence
 
 
-def write_detailed_csv(rows, out_path):
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    fieldnames = ['seed', 'final_score', 'lines_cleared', 'max_combo', 'hands_played',
-                  'pieces_placed', 'avg_move_time_sec', 'total_move_time_sec']
-    with open(out_path, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(fieldnames)
-        for row in rows:
-            writer.writerow([row[k] for k in fieldnames])
+def _completed_seeds(detail_path):
+    if not os.path.exists(detail_path):
+        return set()
+    with open(detail_path, newline='') as f:
+        return {int(r['seed']) for r in csv.DictReader(f)}
 
 
 def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
-    heatmap = np.zeros((_BOARD, _BOARD), dtype=np.int64)
-    rows = []
-
-    for i in range(games):
-        seed = seed_base + i
-        result = run_game_detailed(agent, seed, agent_name, heatmap)
-        rows.append(result)
-        print(f"[{agent_name}] game {i + 1}/{games} seed={seed} "
-              f"score={result['final_score']} lines={result['lines_cleared']} "
-              f"max_combo={result['max_combo']} hands={result['hands_played']} "
-              f"avg_move_time={result['avg_move_time_sec']:.4f}s")
-
+    """Resumable: safe to interrupt (Ctrl-C or kill) at any point and re-run the
+    identical command later -- already-completed seeds are skipped, in-progress
+    games are simply re-run from scratch (nothing partial is ever written)."""
     detail_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_{games}games.csv')
-    write_detailed_csv(rows, detail_path)
-    print(f"[{agent_name}] saved per-game data to {detail_path}")
-
     heatmap_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_heatmap.npy')
-    np.save(heatmap_path, heatmap)
-    print(f"[{agent_name}] saved placement heatmap to {heatmap_path}")
+    density_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_density.csv')
 
-    return rows
+    done_seeds = _completed_seeds(detail_path)
+    heatmap = np.load(heatmap_path) if os.path.exists(heatmap_path) else np.zeros((_BOARD, _BOARD), dtype=np.int64)
+
+    detail_mode = 'a' if done_seeds else 'w'
+    density_mode = 'a' if os.path.exists(density_path) else 'w'
+
+    with open(detail_path, detail_mode, newline='') as detail_f, \
+         open(density_path, density_mode, newline='') as density_f:
+        detail_writer = csv.writer(detail_f)
+        density_writer = csv.writer(density_f)
+        if detail_mode == 'w':
+            detail_writer.writerow(_DETAIL_FIELDNAMES)
+        if density_mode == 'w':
+            density_writer.writerow(_DENSITY_FIELDNAMES)
+
+        remaining = games - len(done_seeds)
+        if done_seeds:
+            print(f"[{agent_name}] resuming: {len(done_seeds)}/{games} already done, {remaining} remaining")
+
+        completed_this_run = 0
+        for i in range(games):
+            seed = seed_base + i
+            if seed in done_seeds:
+                continue
+
+            result, density_sequence = run_game_detailed(agent, seed, agent_name, heatmap)
+            detail_writer.writerow([result[k] for k in _DETAIL_FIELDNAMES])
+            for turn_index, density in enumerate(density_sequence):
+                density_writer.writerow([seed, turn_index, density])
+            detail_f.flush()
+            density_f.flush()
+            np.save(heatmap_path, heatmap)
+
+            completed_this_run += 1
+            print(f"[{agent_name}] game {len(done_seeds) + completed_this_run}/{games} seed={seed} "
+                  f"score={result['final_score']} lines={result['lines_cleared']} "
+                  f"max_combo={result['max_combo']} hands={result['hands_played']} "
+                  f"avg_move_time={result['avg_move_time_sec']:.4f}s")
+
+    print(f"[{agent_name}] saved per-game data to {detail_path}")
+    print(f"[{agent_name}] saved placement heatmap to {heatmap_path}")
+    print(f"[{agent_name}] saved density data to {density_path}")
 
 
 def write_summary_csv(all_stats, out_path):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fieldnames = ['agent', 'n', 'mean_score', 'median_score', 'mean_excl_top_outlier',
-                  'stdev', 'ci95_low', 'ci95_high', 'mean_turns', 'mean_lines_per_game',
-                  'mean_decision_time_sec']
+                  'min_score', 'max_score', 'stdev', 'ci95_low', 'ci95_high', 'mean_turns',
+                  'mean_lines_per_game', 'mean_decision_time_sec']
     with open(out_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(fieldnames)
         for row in all_stats:
             writer.writerow([row[k] for k in fieldnames])
+
+
+def stats_row_from_detail_csv(agent_name, games, results_dir):
+    path = os.path.join(results_dir, f'final_benchmark_{agent_name}_{games}games.csv')
+    with open(path, newline='') as f:
+        rows = list(csv.DictReader(f))
+    scores = [int(r['final_score']) for r in rows]
+    stats = summary_stats(scores)
+    return {
+        'agent': agent_name,
+        'n': stats['n'],
+        'mean_score': stats['mean'],
+        'median_score': stats['median'],
+        'mean_excl_top_outlier': stats['mean_excl_top_outlier'],
+        'min_score': stats['min'],
+        'max_score': stats['max'],
+        'stdev': stats['stdev'],
+        'ci95_low': stats['ci95_low'],
+        'ci95_high': stats['ci95_high'],
+        'mean_turns': sum(int(r['hands_played']) for r in rows) / len(rows),
+        'mean_lines_per_game': sum(int(r['lines_cleared']) for r in rows) / len(rows),
+        'mean_decision_time_sec': sum(float(r['avg_move_time_sec']) for r in rows) / len(rows),
+    }
+
+
+def print_progress(games, results_dir, agents='random,greedy,beam,mcts,dqn'):
+    print(f"Progress toward {games} games/agent:")
+    for agent_name in agents.split(','):
+        detail_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_{games}games.csv')
+        n_done = len(_completed_seeds(detail_path))
+        status = 'COMPLETE' if n_done >= games else 'in progress'
+        print(f"  {agent_name:>8}: {n_done}/{games} ({status})")
 
 
 def main():
@@ -144,41 +207,39 @@ def main():
     p.add_argument('--seed-base', type=int, default=5000)
     p.add_argument('--agents', type=str, default='random,greedy,beam,mcts,dqn',
                    help='comma-separated subset of agents to run, in order')
+    p.add_argument('--recompute-summary-only', action='store_true',
+                   help='skip gameplay entirely; rebuild final_benchmark_summary.csv from existing per-game CSVs')
+    p.add_argument('--progress', action='store_true',
+                   help='print how many games/agent are already completed, then exit (no gameplay)')
     args = p.parse_args()
 
     results_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
-    all_agents = build_agents()
     agent_order = args.agents.split(',')
 
+    if args.progress:
+        print_progress(args.games, results_dir, args.agents)
+        return
+
     all_stats = []
-    for agent_name in agent_order:
-        agent = all_agents[agent_name]
-        t0 = time.time()
-        rows = run_agent_benchmark(agent_name, agent, args.games, args.seed_base, results_dir)
-        elapsed = time.time() - t0
-
-        scores = [r['final_score'] for r in rows]
-        stats = summary_stats(scores)
-        mean_turns = sum(r['hands_played'] for r in rows) / len(rows)
-        mean_lines = sum(r['lines_cleared'] for r in rows) / len(rows)
-        mean_decision_time = sum(r['avg_move_time_sec'] for r in rows) / len(rows)
-
-        all_stats.append({
-            'agent': agent_name,
-            'n': stats['n'],
-            'mean_score': stats['mean'],
-            'median_score': stats['median'],
-            'mean_excl_top_outlier': stats['mean_excl_top_outlier'],
-            'stdev': stats['stdev'],
-            'ci95_low': stats['ci95_low'],
-            'ci95_high': stats['ci95_high'],
-            'mean_turns': mean_turns,
-            'mean_lines_per_game': mean_lines,
-            'mean_decision_time_sec': mean_decision_time,
-        })
-        print(f"[{agent_name}] {args.games} games in {elapsed:.1f}s | "
-              f"mean={stats['mean']:.1f} median={stats['median']:.1f} "
-              f"mean_excl_top_outlier={stats['mean_excl_top_outlier']:.1f}\n")
+    if args.recompute_summary_only:
+        for agent_name in agent_order:
+            row = stats_row_from_detail_csv(agent_name, args.games, results_dir)
+            all_stats.append(row)
+            print(f"[{agent_name}] recomputed from existing CSV | "
+                  f"mean={row['mean_score']:.1f} median={row['median_score']:.1f} "
+                  f"min={row['min_score']:.0f} max={row['max_score']:.0f}")
+    else:
+        all_agents = build_agents()
+        for agent_name in agent_order:
+            agent = all_agents[agent_name]
+            t0 = time.time()
+            run_agent_benchmark(agent_name, agent, args.games, args.seed_base, results_dir)
+            elapsed = time.time() - t0
+            row = stats_row_from_detail_csv(agent_name, args.games, results_dir)
+            all_stats.append(row)
+            print(f"[{agent_name}] {elapsed:.1f}s this run | "
+                  f"mean={row['mean_score']:.1f} median={row['median_score']:.1f} "
+                  f"min={row['min_score']:.0f} max={row['max_score']:.0f} (n={row['n']})\n")
 
     summary_path = os.path.join(results_dir, 'final_benchmark_summary.csv')
     write_summary_csv(all_stats, summary_path)
