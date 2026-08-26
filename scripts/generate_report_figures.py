@@ -12,10 +12,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 _RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results')
 _CHARTS_DIR = os.path.join(_RESULTS_DIR, 'charts')
 
-_AGENTS = ['random', 'greedy', 'mcts', 'dqn', 'beam']
-_AGENT_LABELS = {'random': 'Random', 'greedy': 'Greedy', 'mcts': 'MCTS', 'dqn': 'DQN', 'beam': 'Beam'}
+_AGENTS = ['random', 'greedy', 'mcts', 'dqn', 'beam', 'dqnsearch']
+_AGENT_LABELS = {'random': 'Random', 'greedy': 'Greedy', 'mcts': 'MCTS', 'dqn': 'DQN',
+                 'beam': 'Beam', 'dqnsearch': 'DQNSearch'}
 _AGENT_COLORS = {'random': '#9e9e9e', 'greedy': '#4c78a8', 'mcts': '#72b7b2',
-                 'dqn': '#f58518', 'beam': '#54a24b'}
+                 'dqn': '#f58518', 'beam': '#54a24b', 'dqnsearch': '#b279a2'}
 
 
 def _ensure_charts_dir():

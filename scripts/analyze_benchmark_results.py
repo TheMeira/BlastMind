@@ -9,8 +9,8 @@ from results_lib import mannwhitney_pair, bonferroni_threshold
 
 _RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results')
 
-# Established ranking: Random < Greedy < MCTS < DQN < Beam
-_RANKING = ['random', 'greedy', 'mcts', 'dqn', 'beam']
+# Established ranking: Random < Greedy < MCTS < DQN < Beam < DQNSearch
+_RANKING = ['random', 'greedy', 'mcts', 'dqn', 'beam', 'dqnsearch']
 _ADJACENT_PAIRS = set(zip(_RANKING, _RANKING[1:]))
 _ALL_PAIRS = list(itertools.combinations(_RANKING, 2))
 

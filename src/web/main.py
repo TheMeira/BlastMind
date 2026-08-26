@@ -30,6 +30,7 @@ def serialise_state(state: GameState, last_piece_id: Optional[str] = None) -> di
         ],
         "score": state.score,
         "combo_count": state.combo_count,
+        "lines_cleared": state.lines_cleared_total,
         "game_over": state.game_over,
     }
     if last_piece_id is not None:

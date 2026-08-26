@@ -14,6 +14,7 @@ from src.ai.greedy import GreedyAgent
 from src.ai.beam import BeamAgent
 from src.ai.mcts import MCTSAgent
 from src.ai.dqn import DQNAgent
+from src.ai.dqn_search import DQNSearchAgent
 from results_lib import summary_stats
 
 _BOARD = 8
@@ -33,6 +34,8 @@ def build_agents():
         'mcts': MCTSAgent(n_simulations=500, time_limit=30.0, seed=_AGENT_SEED),
         'dqn': DQNAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt',
                          device='cpu', search_orderings=True),
+        'dqnsearch': DQNSearchAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt',
+                                     device='cpu', seed=_AGENT_SEED),
     }
 
 
@@ -192,7 +195,7 @@ def stats_row_from_detail_csv(agent_name, games, results_dir):
     }
 
 
-def print_progress(games, results_dir, agents='random,greedy,beam,mcts,dqn'):
+def print_progress(games, results_dir, agents='random,greedy,beam,mcts,dqn,dqnsearch'):
     print(f"Progress toward {games} games/agent:")
     for agent_name in agents.split(','):
         detail_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_{games}games.csv')
@@ -205,7 +208,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--games', type=int, default=500)
     p.add_argument('--seed-base', type=int, default=5000)
-    p.add_argument('--agents', type=str, default='random,greedy,beam,mcts,dqn',
+    p.add_argument('--agents', type=str, default='random,greedy,beam,mcts,dqn,dqnsearch',
                    help='comma-separated subset of agents to run, in order')
     p.add_argument('--recompute-summary-only', action='store_true',
                    help='skip gameplay entirely; rebuild final_benchmark_summary.csv from existing per-game CSVs')

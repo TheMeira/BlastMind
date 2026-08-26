@@ -250,13 +250,10 @@ class MultiAgentScene extends Phaser.Scene {
         if (newState.last_piece_id) agent.stats.piecesPlaced++;
 
         let lines = 0;
-        for (let r = 0; r < BOARD_N; r++) {
-            if (prevBoard[r].every(c => c === 1) && newState.board[r].some(c => c === 0)) lines++;
+        if (typeof newState.lines_cleared === 'number') {
+            lines = newState.lines_cleared - agent.stats.linesCleared;
+            agent.stats.linesCleared = newState.lines_cleared;
         }
-        for (let c = 0; c < BOARD_N; c++) {
-            if (prevBoard.every(row => row[c] === 1) && newState.board.some(row => row[c] === 0)) lines++;
-        }
-        agent.stats.linesCleared += lines;
 
         if (newState.combo_count > agent.stats.bestCombo) {
             agent.stats.bestCombo = newState.combo_count;
