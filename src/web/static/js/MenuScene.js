@@ -194,6 +194,7 @@ class MenuScene extends Phaser.Scene {
             fontStyle: 'bold',
             color: '#c8e8ff',
         }).setOrigin(0.5);
+        fitTextsToWidth([txt], W);
 
         const zone = this.add.zone(x - W / 2, y - Ht / 2, W, Ht)
             .setOrigin(0, 0)

@@ -1,3 +1,16 @@
+function fitTextsToWidth(texts, maxW, padFrac) {
+    if (!texts || !texts.length) return 1;
+    const pad = (typeof padFrac === 'number') ? padFrac : 0.16;
+    const avail = maxW * (1 - pad);
+    let scale = 1;
+    texts.forEach(t => {
+        const w = t.width / (t.scaleX || 1);
+        if (w > avail) scale = Math.min(scale, avail / w);
+    });
+    texts.forEach(t => t.setScale(scale));
+    return scale;
+}
+
 function highScoreKey(mode, agent) {
     return 'highScore_' + (mode === 'human' ? 'human' : agent);
 }

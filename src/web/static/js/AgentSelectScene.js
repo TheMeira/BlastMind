@@ -101,6 +101,7 @@ class AgentSelectScene extends Phaser.Scene {
             }
         });
 
+        fitTextsToWidth(this._agentTxts, btnW);
         this.refreshAgentButtons();
     }
 
@@ -171,6 +172,7 @@ class AgentSelectScene extends Phaser.Scene {
             });
         });
 
+        fitTextsToWidth(this._speedTxts, btnW);
         this.refreshSpeedButtons();
     }
 

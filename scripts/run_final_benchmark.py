@@ -52,7 +52,7 @@ def _random_choose_moves(agent, state, engine):
     return moves
 
 
-def run_game_detailed(agent, seed, agent_name, heatmap):
+def run_game_detailed(agent, seed, agent_name, heatmap, occupancy):
     engine = GameEngine(seed=seed)
     state = engine.new_game()
 
@@ -61,6 +61,8 @@ def run_game_detailed(agent, seed, agent_name, heatmap):
     max_combo = 0
     move_times = []
     density_sequence = []
+    game_occupancy = np.zeros((_BOARD, _BOARD), dtype=np.float64)
+    occupancy_turns = 0
 
     while not state.game_over:
         t0 = time.perf_counter()
@@ -82,11 +84,15 @@ def run_game_detailed(agent, seed, agent_name, heatmap):
 
         hands_played += 1
         density_sequence.append(float(state.board.grid.sum()) / (_BOARD * _BOARD))
+        game_occupancy += state.board.grid
+        occupancy_turns += 1
 
         if len(state.pieces) == 0:
             state = engine.start_new_turn(state)
 
     avg_move_time = sum(move_times) / len(move_times) if move_times else 0.0
+    if occupancy_turns:
+        occupancy += game_occupancy / occupancy_turns
 
     result = {
         'seed': seed,
@@ -114,10 +120,13 @@ def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
     games are simply re-run from scratch (nothing partial is ever written)."""
     detail_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_{games}games.csv')
     heatmap_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_heatmap.npy')
+    occupancy_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_occupancy_sum.npy')
     density_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_density.csv')
 
     done_seeds = _completed_seeds(detail_path)
     heatmap = np.load(heatmap_path) if os.path.exists(heatmap_path) else np.zeros((_BOARD, _BOARD), dtype=np.int64)
+    occupancy = (np.load(occupancy_path) if os.path.exists(occupancy_path)
+                 else np.zeros((_BOARD, _BOARD), dtype=np.float64))
 
     detail_mode = 'a' if done_seeds else 'w'
     density_mode = 'a' if os.path.exists(density_path) else 'w'
@@ -141,13 +150,18 @@ def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
             if seed in done_seeds:
                 continue
 
-            result, density_sequence = run_game_detailed(agent, seed, agent_name, heatmap)
+            result, density_sequence = run_game_detailed(agent, seed, agent_name,
+                                                         heatmap, occupancy)
             detail_writer.writerow([result[k] for k in _DETAIL_FIELDNAMES])
             for turn_index, density in enumerate(density_sequence):
                 density_writer.writerow([seed, turn_index, density])
             detail_f.flush()
             density_f.flush()
             np.save(heatmap_path, heatmap)
+            np.save(occupancy_path, occupancy)
+            games_done = len(done_seeds) + completed_this_run + 1
+            np.save(occupancy_path.replace('_occupancy_sum.npy', '_occupancy.npy'),
+                    occupancy / games_done)
 
             completed_this_run += 1
             print(f"[{agent_name}] game {len(done_seeds) + completed_this_run}/{games} seed={seed} "
@@ -158,6 +172,7 @@ def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
     print(f"[{agent_name}] saved per-game data to {detail_path}")
     print(f"[{agent_name}] saved placement heatmap to {heatmap_path}")
     print(f"[{agent_name}] saved density data to {density_path}")
+    print(f"[{agent_name}] saved occupancy sum to {occupancy_path}")
 
 
 def write_summary_csv(all_stats, out_path):
