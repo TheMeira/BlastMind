@@ -93,8 +93,10 @@ def chart_decision_time_vs_score():
         score = float(summary[a]['mean_score'])
         ax.scatter([max(time_ms, 0.01)], [score], s=180, color=_AGENT_COLORS[a],
                    label=_AGENT_LABELS[a], zorder=3)
+        _off = {'greedy': (-52, -16), 'mcts': (10, 6), 'beam': (10, -14)}
         ax.annotate(_AGENT_LABELS[a], (max(time_ms, 0.01), score),
-                    textcoords='offset points', xytext=(8, 6), fontsize=10)
+                    textcoords='offset points', xytext=_off.get(a, (8, 6)),
+                    fontsize=10)
 
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -283,7 +285,8 @@ def chart_dqn_final_lineage():
     ax.plot(smoothed_episodes, smoothed, color='#f58518', linewidth=2, label=f'{window}-episode rolling mean')
     ax.axvline(200000, color='gray', linestyle='--', linewidth=1, label='order-search training begins')
     ax.set_xlabel('Episode')
-    ax.set_ylabel('Training score')
+    ax.set_yscale('log')
+    ax.set_ylabel('Training score (log scale)')
     ax.set_title('DQN Learning Curve: Final Deployed Lineage (v22prod -> order-search training)')
     ax.legend()
     fig.tight_layout()
@@ -295,6 +298,7 @@ def main():
     _ensure_charts_dir()
     chart_bar_mean_ci()
     chart_box_distributions()
+    chart_score_strip()
     chart_score_vs_survival_scatter()
     chart_decision_time_vs_score()
     chart_density_over_time()
@@ -317,9 +321,6 @@ def main():
     chart_placement_heatmaps_diff()
     print(f"Saved charts to {_CHARTS_DIR}")
 
-
-if __name__ == '__main__':
-    main()
 
 _DQN_LOSS_VERSIONS = [
     ('v3 (old arch)', 'dqn_v3', '#c7c7c7'),
@@ -530,7 +531,7 @@ def chart_evaluator_search_grid():
 
     x = np.arange(len(selections))
     width = 0.36
-    fig, ax = plt.subplots(figsize=(9, 5.5))
+    fig, ax = plt.subplots(figsize=(9.5, 6.2))
     for i, ev in enumerate(evaluators):
         heights = [vals[(ev, sel)][0] for sel in selections]
         labels = [vals[(ev, sel)][1] for sel in selections]
@@ -550,9 +551,10 @@ def chart_evaluator_search_grid():
     ax.set_yscale('log')
     ax.set_ylabel('Mean benchmark score (log scale)')
     ax.set_title('Evaluator quality vs search depth\n'
-                 f'Search multiplies both ({b/g:.1f}x heuristic, {ds/d:.1f}x learned), '
-                 f'but the learned value wins at each level ({d/g:.1f}x greedy, {ds/b:.1f}x search)',
-                 fontsize=11)
+                 f'Search multiplies both evaluators ({b/g:.1f}x heuristic, {ds/d:.1f}x learned)\n'
+                 f'but the learned value wins at each level ({d/g:.1f}x under greedy, {ds/b:.1f}x under search)',
+                 fontsize=10.5)
+    ax.set_ylim(top=ax.get_ylim()[1] * 2.2)
     ax.legend(title='evaluator', fontsize=9)
     ax.grid(alpha=0.25, axis='y')
     fig.tight_layout()
@@ -635,7 +637,7 @@ def chart_followup_journey():
     values = [e[1] for e in entries]
     ypos = np.arange(len(entries))[::-1]
 
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig, ax = plt.subplots(figsize=(12.5, 6))
     for y, (label, value, n, verdict) in zip(ypos, entries):
         ax.scatter(value, y, s=130 if n == 500 else 90,
                    marker='o' if n == 500 else 's',
@@ -657,7 +659,9 @@ def chart_followup_journey():
                  fontsize=11)
     handles = [plt.Line2D([], [], marker='o', linestyle='', color=c, label=v)
                for v, c in _VERDICT_COLORS.items()]
-    ax.legend(handles=handles, fontsize=9, loc='lower right', title='verdict')
+    ax.legend(handles=handles, fontsize=9, title='verdict',
+              loc='center left', bbox_to_anchor=(1.01, 0.5), frameon=False)
+    ax.set_xlim(right=max(values) * 2.6)
     ax.grid(alpha=0.25, axis='x', which='both')
     fig.tight_layout()
     fig.savefig(os.path.join(_CHARTS_DIR, 'dqn_followup_journey.png'), dpi=150)
@@ -703,11 +707,15 @@ def chart_occupancy_heatmaps():
 
 
 def chart_placement_heatmaps_diff():
-    """Anchor heatmaps as deviation from the all-agent mean.
+    """Anchor heatmaps as a log-ratio against the pooled all-agent map.
 
-    The raw anchor heatmaps are dominated by piece geometry (a 3x3 piece can only
-    anchor in rows/cols 0-5), making all agents look near-identical. Subtracting
-    the shared baseline exposes the genuine strategic differences.
+    Raw anchor counts confound two things: where the agent chose to place, and
+    where placement was geometrically possible at all (a 3x3 piece can only
+    anchor in rows/cols 0-5). Every agent draws from the same piece
+    distribution, so the pooled map approximates that geometric baseline;
+    dividing by it isolates genuine preference. A log2 ratio is used so that
+    "twice as often" and "half as often" are equal and opposite, and so
+    low-count edge cells remain readable.
     """
     maps = {}
     for agent in _AGENTS:
@@ -718,20 +726,65 @@ def chart_placement_heatmaps_diff():
         h = np.load(path).astype(float)
         maps[agent] = h / h.sum()
 
-    mean_map = np.mean([maps[a] for a in _AGENTS], axis=0)
-    diffs = {a: (maps[a] - mean_map) * 100 for a in _AGENTS}
-    lim = float(max(np.abs(d).max() for d in diffs.values()))
+    pooled = np.mean([maps[a] for a in _AGENTS], axis=0)
+    floor = pooled[pooled > 0].min() * 0.5 if (pooled > 0).any() else 1e-9
+    ratios = {a: np.log2(np.maximum(maps[a], floor) / np.maximum(pooled, floor))
+              for a in _AGENTS}
+    lim = float(max(np.abs(r).max() for r in ratios.values()))
 
-    fig, axes = plt.subplots(1, len(_AGENTS), figsize=(3.0 * len(_AGENTS), 3.4))
+    fig, axes = plt.subplots(1, len(_AGENTS), figsize=(3.0 * len(_AGENTS), 3.6))
     for ax, agent in zip(np.atleast_1d(axes), _AGENTS):
-        im = ax.imshow(diffs[agent], cmap='coolwarm', vmin=-lim, vmax=lim)
+        im = ax.imshow(ratios[agent], cmap='coolwarm', vmin=-lim, vmax=lim)
         ax.set_title(_AGENT_LABELS[agent], fontsize=10)
         ax.set_xticks([]); ax.set_yticks([])
-    fig.colorbar(im, ax=np.atleast_1d(axes).tolist(), fraction=0.02, pad=0.01,
-                 label='deviation (percentage points)')
-    fig.suptitle('Placement anchor heatmaps, relative to the all-agent mean\n'
-                 'Raw anchor counts are dominated by piece geometry; this shows only what differs',
+    cb = fig.colorbar(im, ax=np.atleast_1d(axes).tolist(), fraction=0.02, pad=0.01)
+    cb.set_label('log2(agent / all-agent mean)')
+    fig.suptitle('Placement preference, controlling for piece geometry\n'
+                 'Red = anchors here more often than the average agent, blue = less often',
                  fontsize=11)
     fig.savefig(os.path.join(_CHARTS_DIR, 'placement_heatmaps_diff.png'), dpi=150,
                 bbox_inches='tight')
     plt.close(fig)
+
+
+def chart_score_strip():
+    """Every game as one dot, with median and quartile markers.
+
+    Alternative to the box plot: nothing to decode, since each dot is a single
+    game. Shows the full 500-game spread rather than compressing it into five
+    summary statistics, and makes the heavy upper tail directly visible.
+    """
+    rng = np.random.default_rng(0)
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+
+    for i, agent in enumerate(_AGENTS):
+        rows = _load_scores(agent)
+        sc = np.array([int(r['final_score']) for r in rows], dtype=float)
+        jitter = rng.uniform(-0.28, 0.28, size=len(sc))
+        ax.scatter(np.full(len(sc), i) + jitter, sc, s=7, alpha=0.28,
+                   color=_AGENT_COLORS[agent], linewidths=0, zorder=2)
+
+        q1, med, q3 = np.percentile(sc, [25, 50, 75])
+        ax.hlines(med, i - 0.40, i + 0.40, color='#222222', linewidth=2.4, zorder=4)
+        ax.hlines([q1, q3], i - 0.28, i + 0.28, color='#222222',
+                  linewidth=1.1, alpha=0.75, zorder=4)
+        ax.annotate(f'{med:,.0f}', (i, med), textcoords='offset points',
+                    xytext=(0, 9), ha='center', fontsize=9, fontweight='bold',
+                    zorder=5)
+
+    ax.set_xticks(range(len(_AGENTS)))
+    ax.set_xticklabels([_AGENT_LABELS[a] for a in _AGENTS])
+    ax.set_yscale('log')
+    ax.set_ylabel('Final score (log scale)')
+    ax.set_title('Final Benchmark: Every Game Plotted (500 games per agent)\n'
+                 'Each dot is one game; thick line = median, thin lines = middle 50%',
+                 fontsize=11)
+    ax.grid(alpha=0.2, axis='y', which='both')
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(os.path.join(_CHARTS_DIR, 'score_distributions_strip.png'), dpi=150)
+    plt.close(fig)
+
+
+if __name__ == '__main__':
+    main()

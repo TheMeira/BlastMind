@@ -1,6 +1,7 @@
 import argparse
 import csv
 import os
+import pickle
 import sys
 import time
 
@@ -50,6 +51,33 @@ def _random_choose_moves(agent, state, engine):
         moves.append((pid, row, col))
         sim = engine.apply_placement(sim, pid, row, col)
     return moves
+
+
+def _rng_state_path(results_dir, agent_name):
+    return os.path.join(results_dir, f'final_benchmark_{agent_name}_rngstate.pkl')
+
+
+def _save_rng_state(agent, path):
+    """Persist the agent's RNG so an interrupted run resumes bit-exactly."""
+    rng = getattr(agent, '_rng', None)
+    if rng is None:
+        return
+    with open(path, 'wb') as f:
+        pickle.dump(rng.getstate(), f)
+
+
+def _restore_rng_state(agent, path):
+    """Restore RNG state saved by a previous session. Returns True if restored."""
+    rng = getattr(agent, '_rng', None)
+    if rng is None or not os.path.exists(path):
+        return False
+    try:
+        with open(path, 'rb') as f:
+            rng.setstate(pickle.load(f))
+        return True
+    except Exception as exc:
+        print(f"  WARNING: could not restore RNG state ({exc}); continuing from a fresh seed")
+        return False
 
 
 def run_game_detailed(agent, seed, agent_name, heatmap, occupancy):
@@ -124,6 +152,15 @@ def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
     density_path = os.path.join(results_dir, f'final_benchmark_{agent_name}_density.csv')
 
     done_seeds = _completed_seeds(detail_path)
+    rng_path = _rng_state_path(results_dir, agent_name)
+    if done_seeds:
+        if _restore_rng_state(agent, rng_path):
+            print(f"[{agent_name}] restored RNG state -- resuming the original random sequence")
+        else:
+            print(f"[{agent_name}] NOTE: no saved RNG state; games after this point "
+                  f"use a fresh random sequence")
+    elif os.path.exists(rng_path):
+        os.remove(rng_path)
     heatmap = np.load(heatmap_path) if os.path.exists(heatmap_path) else np.zeros((_BOARD, _BOARD), dtype=np.int64)
     occupancy = (np.load(occupancy_path) if os.path.exists(occupancy_path)
                  else np.zeros((_BOARD, _BOARD), dtype=np.float64))
@@ -159,6 +196,7 @@ def run_agent_benchmark(agent_name, agent, games, seed_base, results_dir):
             density_f.flush()
             np.save(heatmap_path, heatmap)
             np.save(occupancy_path, occupancy)
+            _save_rng_state(agent, rng_path)
             games_done = len(done_seeds) + completed_this_run + 1
             np.save(occupancy_path.replace('_occupancy_sum.npy', '_occupancy.npy'),
                     occupancy / games_done)
