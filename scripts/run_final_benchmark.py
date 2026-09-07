@@ -21,6 +21,11 @@ from results_lib import summary_stats
 _BOARD = 8
 _AGENT_SEED = 42
 
+# Anchored to the project root so the script runs from any working directory.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DQN_CHECKPOINT = os.path.join(_PROJECT_ROOT, 'models',
+                               'dqn_vv24_ordersearch_diag_ep205000.pt')
+
 _DETAIL_FIELDNAMES = ['seed', 'final_score', 'lines_cleared', 'max_combo', 'hands_played',
                       'pieces_placed', 'avg_move_time_sec', 'total_move_time_sec']
 _DENSITY_FIELDNAMES = ['seed', 'turn_index', 'density']
@@ -33,9 +38,9 @@ def build_agents():
         'beam': BeamAgent(beam_width=16, lookahead_depth=1, samples=8,
                            search_orderings=True, seed=_AGENT_SEED),
         'mcts': MCTSAgent(n_simulations=500, time_limit=30.0, seed=_AGENT_SEED),
-        'dqn': DQNAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt',
+        'dqn': DQNAgent(checkpoint_path=_DQN_CHECKPOINT,
                          device='cpu', search_orderings=True),
-        'dqnsearch': DQNSearchAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt',
+        'dqnsearch': DQNSearchAgent(checkpoint_path=_DQN_CHECKPOINT,
                                      device='cpu', seed=_AGENT_SEED),
     }
 

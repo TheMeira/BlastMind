@@ -1,10 +1,14 @@
-fastapi
-uvicorn[standard]
-numpy
-torch
-pandas
-matplotlib
-seaborn
-scipy>=1.7
-python-multipart
-pytest
+# Requires Python 3.12, 3.13 or 3.14 (scipy 1.18.0 has no wheels below 3.12).
+#
+# PLATFORM NOTE: torch 2.12.0 publishes wheels for Windows x64, Linux
+# (x86_64 and aarch64) and Apple Silicon macOS 14+. There is no Intel-Mac
+# wheel, so installation will fail on macOS x86_64. See README.md.
+
+fastapi==0.136.3
+uvicorn[standard]>=0.30,<1.0
+numpy==2.4.6
+scipy==1.18.0
+matplotlib==3.10.9
+pandas==3.0.3
+torch==2.12.0
+pytest==9.0.3

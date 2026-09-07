@@ -1,6 +1,7 @@
 import asyncio
 import multiprocessing
 import random
+from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
@@ -13,6 +14,10 @@ from src.ai.beam import BeamAgent
 from src.ai.mcts import MCTSAgent
 from src.ai.dqn import DQNAgent
 from src.ai.dqn_search import DQNSearchAgent
+
+# Anchored to the project root so the server runs from any working directory.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DQN_CHECKPOINT = str(_PROJECT_ROOT / 'models' / 'dqn_vv24_ordersearch_diag_ep205000.pt')
 
 _EXECUTOR = ProcessPoolExecutor(max_workers=5, mp_context=multiprocessing.get_context('spawn'))
 
@@ -51,7 +56,7 @@ _AGENTS = {
     'greedy': GreedyAgent(search_orderings=True),
     'beam': BeamAgent(beam_width=16, lookahead_depth=1, samples=8, search_orderings=True),
     'mcts': MCTSAgent(n_simulations=500, time_limit=3.0),
-    'dqn': DQNSearchAgent(checkpoint_path='models/dqn_vv24_ordersearch_diag_ep205000.pt', device='cpu', seed=42),
+    'dqn': DQNSearchAgent(checkpoint_path=_DQN_CHECKPOINT, device='cpu', seed=42),
 }
 
 
