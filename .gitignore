@@ -11,8 +11,34 @@ env/
 Thumbs.db
 notebooks/.ipynb_checkpoints/
 models/*.pt
-# ...except the deployed network, which both learned agents load.
+# ...except the deployed network, which both learned agents load,
+# and one checkpoint per training run, kept for the version history.
 !models/dqn_vv24_ordersearch_diag_ep205000.pt
+!models/dqn_v1_ep500.pt
+!models/dqn_v2_ep5000.pt
+!models/dqn_v3_ep40000.pt
+!models/dqn_v4_ep5000.pt
+!models/dqn_v5_ep5000.pt
+!models/dqn_v6_ep5000.pt
+!models/dqn_v7_ep75000.pt
+!models/dqn_v8_ep5000.pt
+!models/dqn_v9_ep5000.pt
+!models/dqn_v10_ep12000.pt
+!models/dqn_v11_ep28000.pt
+!models/dqn_v12_ep48000.pt
+!models/dqn_v13_ep32000.pt
+!models/dqn_v14_ep32000.pt
+!models/dqn_v15_ep80000.pt
+!models/dqn_v16prod_ep174000.pt
+!models/dqn_v17fix_ep40000.pt
+!models/dqn_v18prod_ep62000.pt
+!models/dqn_v19buf_ep40000.pt
+!models/dqn_v19eps_ep40001.pt
+!models/dqn_v19per_ep40000.pt
+!models/dqn_v20_ep28000.pt
+!models/dqn_v21_ep40000.pt
+!models/dqn_v22prod_ep200000.pt
+!models/dqn_v23_ep200000.pt
 
 out/
 replays/
