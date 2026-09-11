@@ -58,6 +58,9 @@ Then open <http://127.0.0.1:8000>.
 The interface offers three modes: human play, watching a single agent, and
 several agents playing the same seeded game side by side.
 
+No internet connection is needed: Phaser and the font loader are served from the
+repository rather than from a content delivery network.
+
 The trained network the learned agents use is included in this repository at
 `models/dqn_vv24_ordersearch_diag_ep205000.pt`, so no additional download is
 needed. If that file is removed, agent-watching stops working entirely rather
@@ -125,21 +128,22 @@ python scripts/generate_report_figures.py
 |---|---|
 | `src/game/` | Game engine: board, piece definitions, seeded generator, scoring and combo logic |
 | `src/ai/` | The six agents, plus variants that were tested and rejected |
-| `src/web/` | FastAPI server, websocket endpoint, and the Phaser client under `static/js` |
+| `src/web/` | FastAPI server, websocket endpoint, and the Phaser client under `static/js`; third-party libraries are vendored in `static/js/vendor` |
 | `scripts/` | Benchmarking, training, diagnostics and figure generation |
 | `tests/` | Test suite |
-| `models/` | The deployed network; other checkpoints are not tracked (see below) |
+| `models/` | The deployed network and one checkpoint per training run (see below) |
 | `results/` | Per-game benchmark output, summary and significance tables, charts |
 
 ---
 
 ## A note on `models/`
 
-Training produced 865 checkpoints totalling roughly 11.6 GB, so they are excluded
-from version control with a single exception: `dqn_vv24_ordersearch_diag_ep205000.pt`,
-the deployed network loaded by both learned agents, is committed so that a fresh
-clone runs without any further setup. It is the only checkpoint needed to
-reproduce the published results.
+Training produced 865 checkpoints totalling roughly 11.6 GB, which is too much for
+version control. The repository tracks 26 of them: `dqn_vv24_ordersearch_diag_ep205000.pt`,
+the deployed network that both learned agents load, and one checkpoint per training
+run so that the version history can be inspected directly. The deployed network is
+the only one needed to reproduce the published results, and a fresh clone runs
+without any further setup.
 
 Scripts and the web server resolve this path relative to the repository root,
 so they can be launched from any working directory.
